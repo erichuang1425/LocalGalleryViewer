@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gallery — folder reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<div id="prog"></div>
+
+<header id="bar" style="display:none">
+  <div class="brand">▚ <b>GALLERY</b></div>
+  <nav class="crumbs" id="crumbs"></nav>
+  <input id="filter" class="filter" placeholder="filter…" autocomplete="off" spellcheck="false">
+  <button class="btn ghost icon" id="settingsBtn" title="Settings">⚙</button>
+  <button class="btn ghost" id="rootBtn" title="Open a different root folder">⤓ folder</button>
+</header>
+
+<section id="intro">
+  <div class="ico">🗂️</div>
+  <h1>Read your folders<br>like a <span>gallery</span>.</h1>
+  <p>Pick any folder — internal or external drive. Each subfolder becomes a post with a cover. Click into media to read it: vertical scroll or page by page.</p>
+  <div class="acts">
+    <button class="btn solid" id="pick">⤓ &nbsp;Choose a folder</button>
+  </div>
+  <div class="recents" id="recents"></div>
+  <div class="note">Runs <b>on your machine</b> — nothing uploaded. Needs <b>Chrome / Edge</b>. Covers are cached, so reopening a drive is instant. Keep these three files in the same folder.</div>
+</section>
+
+<main id="main" style="display:none"></main>
+
+<div id="reader">
+  <div class="rbar">
+    <span class="rtitle" id="rtitle"></span>
+    <span class="rcount" id="rcount"></span>
+    <div class="spacer" style="flex:1"></div>
+    <div class="seg">
+      <button id="mScroll" class="act">↕ scroll</button>
+      <button id="mPage">⇄ pages</button>
+    </div>
+    <button class="rclose" id="slide" title="Slideshow (s)">▶</button>
+    <button class="rclose" id="rclose" title="Close (Esc)">✕</button>
+  </div>
+  <div class="scroll" id="scroll"></div>
+  <div class="paged" id="paged">
+    <div class="zone l" id="zL"></div>
+    <div class="zone r" id="zR"></div>
+    <button class="nav l" id="navL">‹</button>
+    <div class="stage" id="stage"></div>
+    <button class="nav r" id="navR">›</button>
+  </div>
+</div>
+
+<aside id="settings" class="drawer">
+  <div class="dhead"><span>⚙ Settings</span><button class="rclose" id="sClose">✕</button></div>
+  <div class="sect"><h4>Card size</h4>
+    <div class="seg" id="segDensity"><button data-v="compact">compact</button><button data-v="cozy">cozy</button><button data-v="large">large</button></div></div>
+  <div class="sect"><h4>Reading width · scroll</h4>
+    <div class="seg" id="segWidth"><button data-v="narrow">narrow</button><button data-v="medium">medium</button><button data-v="full">full</button></div></div>
+  <div class="sect"><h4>Order</h4>
+    <div class="seg" id="segSort"><button data-v="name">name ↑</button><button data-v="nameDesc">name ↓</button><button data-v="shuffle">shuffle</button></div></div>
+  <div class="sect"><h4>Snap scrolling</h4>
+    <div class="seg" id="segSnap"><button data-v="on">on</button><button data-v="off">off</button></div></div>
+  <div class="sect"><h4>Thumbnail cache</h4>
+    <div class="cacheline" id="cacheStat">—</div>
+    <button class="btn" id="clearCache">Clear cache</button></div>
+</aside>
+<div id="backdrop"></div>
+
+<div class="toast" id="toast"></div>
+
+<script src="./app.js"></script>
+</body>
+</html>
