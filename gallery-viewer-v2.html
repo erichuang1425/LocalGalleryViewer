@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gallery — folder reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0c0b0a; --bg2:#141210; --panel:#1a1714;
+    --line:#2a2521; --line2:#3a332c;
+    --txt:#ece6dd; --dim:#8c857b; --faint:#5d574e;
+    --accent:#e8923a; --accent2:#f0b46a; --bad:#d8503c;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:"IBM Plex Sans",system-ui,sans-serif;
+    --r:10px; --ease:cubic-bezier(.2,.7,.2,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 80% -10%, #1c1814 0%, transparent 60%), var(--bg);
+    color:var(--txt); font-family:var(--sans); -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  button{font:inherit;color:inherit;cursor:pointer;background:none;border:none}
+
+  /* ---------- top bar ---------- */
+  header{
+    position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:12px 18px;
+    background:rgba(12,11,10,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);
+  }
+  .brand{font-family:var(--mono);font-weight:600;letter-spacing:.5px;font-size:13px;color:var(--accent);white-space:nowrap}
+  .brand b{color:var(--txt)}
+  .crumbs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-family:var(--mono);font-size:13px;overflow:hidden}
+  .crumbs button{color:var(--dim);padding:2px 6px;border-radius:6px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .15s,background .15s}
+  .crumbs button:hover{color:var(--txt);background:var(--panel)}
+  .crumbs button:last-child{color:var(--txt)}
+  .crumbs .sep{color:var(--faint)}
+  .spacer{flex:1}
+  .btn{
+    border:1px solid var(--line2);border-radius:8px;padding:7px 13px;font-family:var(--mono);font-size:12.5px;color:var(--txt);
+    display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:border-color .15s,background .15s,transform .06s,box-shadow .15s;
+  }
+  .btn:hover{border-color:var(--accent);background:var(--panel);box-shadow:0 0 0 3px rgba(232,146,58,.08)}
+  .btn:active{transform:translateY(1px) scale(.985)}
+  .btn.solid{background:var(--accent);color:#1a1208;border-color:var(--accent);font-weight:600}
+  .btn.solid:hover{background:var(--accent2);box-shadow:0 6px 18px -8px rgba(232,146,58,.7)}
+  .btn.ghost{color:var(--dim)} .btn.ghost:hover{color:var(--txt)}
+
+  /* ---------- intro ---------- */
+  #intro{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;gap:22px}
+  #intro>*{animation:rise .6s var(--ease) both}
+  #intro .ico{font-size:46px;animation-delay:.02s}
+  #intro h1{font-weight:700;font-size:clamp(28px,5vw,46px);letter-spacing:-1px;line-height:1;animation-delay:.08s}
+  #intro h1 span{color:var(--accent)}
+  #intro p{color:var(--dim);max-width:520px;line-height:1.6;font-size:15px;animation-delay:.14s}
+  #intro .acts{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;animation-delay:.2s}
+  #intro .note{font-family:var(--mono);font-size:11.5px;color:var(--faint);border:1px solid var(--line);border-radius:8px;padding:10px 14px;max-width:520px;line-height:1.7;animation-delay:.26s}
+  #intro .note b{color:var(--dim)}
+
+  /* ---------- grid ---------- */
+  main{padding:20px 18px 90px;max-width:1500px;margin:0 auto}
+  .here{display:flex;align-items:center;gap:14px;flex-wrap:wrap;border:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--bg2));border-radius:var(--r);padding:14px 16px;margin-bottom:22px;animation:rise .4s var(--ease) both}
+  .here .lbl{font-family:var(--mono);font-size:12.5px;color:var(--dim)} .here .lbl b{color:var(--txt)}
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(216px,1fr))}
+  .card{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--bg2);display:flex;flex-direction:column;
+    opacity:0;transform:translateY(12px);animation:rise .45s var(--ease) forwards;transition:border-color .18s,transform .18s var(--ease),box-shadow .18s}
+  .card:hover{border-color:var(--line2);transform:translateY(-3px);box-shadow:0 14px 30px -18px rgba(0,0,0,.9)}
+  .card:hover .cover .open-hint{opacity:1;transform:none}
+  .card:hover .cover .img{transform:scale(1.06)}
+  .cover{position:relative;aspect-ratio:4/5;overflow:hidden;cursor:pointer;
+    background:repeating-linear-gradient(45deg,#15120f 0 10px,#171310 10px 20px)}
+  .cover .img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;background:#0a0908;
+    opacity:0;transform:scale(1.02);transition:opacity .45s ease,transform .55s var(--ease)}
+  .cover .img.in{opacity:1;transform:none}
+  .cover .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:30px}
+  .cover .badge{position:absolute;left:8px;top:8px;display:flex;gap:6px;flex-wrap:wrap;z-index:2}
+  .chip{font-family:var(--mono);font-size:10.5px;line-height:1;background:rgba(8,7,6,.8);border:1px solid var(--line2);color:var(--dim);padding:4px 6px;border-radius:6px;backdrop-filter:blur(4px)}
+  .chip.vid{color:var(--accent2);border-color:#5a3f1e}
+  .cover .open-hint{position:absolute;right:8px;bottom:8px;z-index:2;opacity:0;transform:translateY(4px);transition:opacity .18s,transform .18s var(--ease);
+    font-family:var(--mono);font-size:10.5px;color:#1a1208;background:var(--accent);padding:4px 8px;border-radius:6px;font-weight:600}
+  .meta{display:flex;align-items:center;gap:8px;padding:10px 11px}
+  .meta .name{font-size:13.5px;font-weight:500;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .enter{border:1px solid var(--line2);border-radius:7px;width:30px;height:28px;display:grid;place-items:center;color:var(--dim);flex:none;font-size:15px;transition:.15s}
+  .enter:hover{color:var(--accent);border-color:var(--accent);background:var(--panel);transform:translateX(1px)}
+  .empty{color:var(--faint);font-family:var(--mono);font-size:13px;padding:60px 0;text-align:center}
+
+  /* shimmer placeholder (cheap) */
+  .shim{position:relative;overflow:hidden}
+  .shim::after{content:"";position:absolute;inset:0;transform:translateX(-100%);
+    background:linear-gradient(100deg,transparent 35%,rgba(232,146,58,.07) 50%,transparent 65%);animation:sh 1.5s infinite}
+  @keyframes sh{to{transform:translateX(100%)}}
+  @keyframes rise{to{opacity:1;transform:none}}
+
+  /* ---------- reader ---------- */
+  #reader{position:fixed;inset:0;z-index:90;background:#060504;display:none;flex-direction:column;opacity:0;transition:opacity .2s}
+  #reader.on{display:flex;opacity:1}
+  #reader.open-anim .rbar,#reader.open-anim .scroll,#reader.open-anim .paged{animation:fadeUp .35s var(--ease) both}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .rbar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:12px;padding:10px 16px;
+    background:rgba(6,5,4,.72);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);transition:opacity .28s,transform .28s var(--ease)}
+  #reader.hidebar .rbar{opacity:0;transform:translateY(-100%);pointer-events:none}
+  .rtitle{font-family:var(--mono);font-size:13px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rcount{font-family:var(--mono);font-size:12px;color:var(--dim);white-space:nowrap}
+  .seg{display:flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
+  .seg button{padding:6px 11px;font-family:var(--mono);font-size:11.5px;color:var(--dim);transition:background .18s,color .18s}
+  .seg button.act{background:var(--accent);color:#1a1208;font-weight:600}
+  .rclose{border:1px solid var(--line2);border-radius:8px;width:32px;height:30px;display:grid;place-items:center;color:var(--dim);font-size:16px;transition:.15s}
+  .rclose:hover{color:var(--bad);border-color:var(--bad);transform:rotate(90deg)}
+
+  /* scroll mode — snap + windowed */
+  .scroll{flex:1;overflow-y:auto;overflow-x:hidden;scroll-snap-type:y proximity;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+  .scroll .item{display:flex;justify-content:center;padding:0 0 3px;scroll-snap-align:start;min-height:60vh}
+  .scroll .item.loaded{min-height:0}
+  .scroll .item>*{max-width:min(100%,1000px);width:100%;height:auto;display:block;background:#0a0908;
+    opacity:0;transition:opacity .3s ease}
+  .scroll .item.shown>*{opacity:1}
+
+  /* paged mode */
+  .paged{flex:1;position:relative;display:none;align-items:center;justify-content:center;overflow:hidden;touch-action:pan-y}
+  .paged.on{display:flex}
+  .paged .stage{max-width:100%;max-height:100%;display:flex;align-items:center;justify-content:center;will-change:opacity,transform}
+  .paged .stage>*{max-width:100vw;max-height:calc(100dvh - 8px);width:auto;height:auto;object-fit:contain;background:#060504}
+  .zone{position:absolute;top:0;bottom:0;width:34%;z-index:3}
+  .zone.l{left:0;cursor:w-resize}.zone.r{right:0;cursor:e-resize}
+  .paged.video .zone{pointer-events:none}            /* let native video controls work */
+  .nav{position:absolute;top:50%;z-index:4;width:46px;height:46px;border-radius:50%;display:grid;place-items:center;
+    background:rgba(20,18,16,.7);border:1px solid var(--line2);color:var(--txt);font-size:20px;
+    opacity:0;pointer-events:none;transform:translateY(-50%) scale(.92);transition:opacity .2s,transform .2s var(--ease),background .15s,color .15s}
+  .nav.l{left:14px}.nav.r{right:14px}
+  .nav.show{opacity:.92;pointer-events:auto;transform:translateY(-50%) scale(1)}
+  .nav.show:hover{background:var(--accent);color:#1a1208;border-color:var(--accent);transform:translateY(-50%) scale(1.08)}
+
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--panel);border:1px solid var(--line2);
+    color:var(--txt);padding:10px 16px;border-radius:9px;font-family:var(--mono);font-size:12.5px;z-index:200;opacity:0;transition:.25s;pointer-events:none;max-width:90vw}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  ::-webkit-scrollbar{width:11px;height:11px}
+  ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px;border:3px solid var(--bg)}
+  ::-webkit-scrollbar-track{background:transparent}
+  @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<header id="bar" style="display:none">
+  <div class="brand">▚ <b>GALLERY</b></div>
+  <nav class="crumbs" id="crumbs"></nav>
+  <div class="spacer"></div>
+  <button class="btn ghost" id="rootBtn" title="Open a different root folder">⤓ folder</button>
+</header>
+
+<section id="intro">
+  <div class="ico">🗂️</div>
+  <h1>Read your folders<br>like a <span>gallery</span>.</h1>
+  <p>Pick any folder — internal or external drive. Each subfolder becomes a post with a cover. Click into media to read it: vertical scroll or page by page.</p>
+  <div class="acts">
+    <button class="btn solid" id="pick">⤓ &nbsp;Choose a folder</button>
+    <button class="btn" id="reopen" style="display:none"></button>
+  </div>
+  <div class="note">Runs <b>on your machine</b> — nothing uploaded. Needs <b>Chrome / Edge</b>. Covers are cached, so reopening a drive is instant.</div>
+</section>
+
+<main id="main" style="display:none"></main>
+
+<div id="reader">
+  <div class="rbar">
+    <span class="rtitle" id="rtitle"></span>
+    <span class="rcount" id="rcount"></span>
+    <div class="spacer"></div>
+    <div class="seg">
+      <button id="mScroll" class="act">↕ scroll</button>
+      <button id="mPage">⇄ pages</button>
+    </div>
+    <button class="rclose" id="rclose" title="Close (Esc)">✕</button>
+  </div>
+  <div class="scroll" id="scroll"></div>
+  <div class="paged" id="paged">
+    <div class="zone l" id="zL"></div>
+    <div class="zone r" id="zR"></div>
+    <button class="nav l" id="navL">‹</button>
+    <div class="stage" id="stage"></div>
+    <button class="nav r" id="navR">›</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const IMG=['jpg','jpeg','png','gif','webp','avif','bmp','jfif','svg'];
+const VID=['mp4','webm','mov','m4v','mkv','ogv','ogg'];
+const COVER_DEPTH=4, DIR_SCAN_CAP=12, THUMB=480, READ_MAX=4;
+const $=s=>document.querySelector(s);
+const ext=n=>(n.split('.').pop()||'').toLowerCase();
+const isImg=n=>IMG.includes(ext(n));
+const isVid=n=>VID.includes(ext(n));
+const isMedia=n=>isImg(n)||isVid(n);
+const natCmp=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'}).compare;
+
+let root=null, stack=[], NAV_GEN=0;
+const urls=new Map();              // reader full-res: handle -> objectURL
+const coverUrls=new Set();         // grid thumb URLs (revoked on re-render)
+const dirCache=new WeakMap();      // dirHandle -> {dirs,files}
+
+/* ---------- read queue (kind to slow / external disks) ---------- */
+let active=0; const q=[];
+const schedule=fn=>new Promise((res,rej)=>{q.push({fn,res,rej});pump();});
+function pump(){ while(active<READ_MAX && q.length){ const t=q.shift(); active++; t.fn().then(t.res,t.rej).finally(()=>{active--;pump();}); } }
+
+/* ---------- IndexedDB (thumb cache + last handle) ---------- */
+let _db;
+function db(){ return _db||(_db=new Promise((res,rej)=>{const r=indexedDB.open('gallery',1);
+  r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('thumbs'))d.createObjectStore('thumbs');if(!d.objectStoreNames.contains('meta'))d.createObjectStore('meta');};
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);})); }
+async function idbGet(store,k){ const d=await db(); return new Promise((res,rej)=>{const rq=d.transaction(store).objectStore(store).get(k);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);}); }
+async function idbPut(store,k,v){ const d=await db(); return new Promise((res,rej)=>{const t=d.transaction(store,'readwrite');t.objectStore(store).put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error);}); }
+
+/* ---------- filesystem ---------- */
+async function listing(h){
+  if(dirCache.has(h)) return dirCache.get(h);
+  const dirs=[],files=[];
+  for await(const e of h.values()){
+    if(e.kind==='directory') dirs.push({name:e.name,handle:e});
+    else if(isMedia(e.name)) files.push({name:e.name,handle:e});
+  }
+  dirs.sort((a,b)=>natCmp(a.name,b.name));
+  files.sort((a,b)=>natCmp(a.name,b.name));
+  const out={dirs,files}; dirCache.set(h,out); return out;
+}
+async function findCover(h,depth=0){
+  const {dirs,files}=await listing(h);
+  const hit=files.find(f=>isImg(f.name))||files.find(f=>isVid(f.name));
+  if(hit) return hit;
+  if(depth<COVER_DEPTH){
+    for(const d of dirs.slice(0,DIR_SCAN_CAP)){
+      const c=await findCover(d.handle,depth+1); if(c) return c;
+    }
+  }
+  return null;
+}
+async function getURL(fh){
+  if(urls.has(fh)) return urls.get(fh);
+  const u=URL.createObjectURL(await fh.getFile()); urls.set(fh,u); return u;
+}
+function releaseURL(fh,u){ if(urls.get(fh)===u){URL.revokeObjectURL(u);urls.delete(fh);} }
+function freeURLs(){ for(const u of urls.values()) URL.revokeObjectURL(u); urls.clear(); }
+
+/* ---------- thumbnails ---------- */
+async function imgThumb(file){
+  try{
+    let bmp;
+    try{ bmp=await createImageBitmap(file,{resizeWidth:THUMB,resizeQuality:'medium'}); }
+    catch{ bmp=await createImageBitmap(file); }
+    const w=Math.min(THUMB,bmp.width), h=Math.max(1,Math.round(bmp.height*(w/bmp.width)));
+    const c=('OffscreenCanvas'in window)?new OffscreenCanvas(w,h):Object.assign(document.createElement('canvas'),{width:w,height:h});
+    c.getContext('2d').drawImage(bmp,0,0,w,h); bmp.close&&bmp.close();
+    return c.convertToBlob?await c.convertToBlob({type:'image/webp',quality:.8}):await new Promise(r=>c.toBlob(r,'image/webp',.8));
+  }catch{ return null; }
+}
+function videoThumb(file){
+  return new Promise(res=>{
+    const url=URL.createObjectURL(file), v=document.createElement('video');
+    v.muted=true;v.preload='metadata';v.playsInline=true;v.src=url;
+    let done=false; const fin=b=>{if(done)return;done=true;URL.revokeObjectURL(url);res(b);};
+    const grab=()=>{try{const w=THUMB,h=Math.max(1,Math.round(v.videoHeight*(THUMB/v.videoWidth)));
+      const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(v,0,0,w,h);
+      c.toBlob(b=>fin(b),'image/webp',.8);}catch{fin(null);}};
+    v.onloadeddata=()=>{try{v.currentTime=Math.min(1,(v.duration||3)/3);}catch{grab();}};
+    v.onseeked=grab; v.onerror=()=>fin(null); setTimeout(()=>fin(null),4000);
+  });
+}
+async function thumbURL(fh){
+  const file=await fh.getFile();                       // metadata read — cheap
+  if(ext(file.name)==='svg'){ const u=URL.createObjectURL(file);coverUrls.add(u);return u; }
+  const key=file.name+'|'+file.size+'|'+file.lastModified;
+  let blob=await idbGet('thumbs',key).catch(()=>null);
+  if(!blob){ blob=isVid(file.name)?await videoThumb(file):await imgThumb(file); if(blob) idbPut('thumbs',key,blob).catch(()=>{}); }
+  if(!blob) return null;
+  const u=URL.createObjectURL(blob); coverUrls.add(u); return u;
+}
+
+/* ---------- navigation ---------- */
+async function pick(){
+  try{ root=await window.showDirectoryPicker({mode:'read'}); }catch{ return; }
+  idbPut('meta','last',root).catch(()=>{});
+  launch();
+}
+async function reopen(h){
+  const opt={mode:'read'};
+  if(await h.queryPermission(opt)!=='granted' && await h.requestPermission(opt)!=='granted'){ toast('Permission denied'); return; }
+  root=h; launch();
+}
+function launch(){ stack=[{name:root.name,handle:root}]; $('#intro').style.display='none'; $('#bar').style.display='flex'; $('#main').style.display='block'; render(); }
+function goTo(i){ stack=stack.slice(0,i+1); render(); }
+function enter(n){ stack.push(n); render(); }
+function up(){ if(stack.length>1){stack.pop();render();} }
+
+function crumbs(){
+  const c=$('#crumbs'); c.innerHTML='';
+  stack.forEach((n,i)=>{
+    if(i) c.insertAdjacentHTML('beforeend','<span class="sep">/</span>');
+    const b=document.createElement('button'); b.textContent=n.name; b.title=n.name; b.onclick=()=>goTo(i); c.appendChild(b);
+  });
+}
+
+/* ---------- browse ---------- */
+let coverObs;
+async function render(){
+  const gen=++NAV_GEN;
+  for(const u of coverUrls) URL.revokeObjectURL(u); coverUrls.clear();
+  crumbs();
+  const cur=stack[stack.length-1], m=$('#main'); m.innerHTML='';
+  let data; try{ data=await listing(cur.handle); }catch{ m.innerHTML='<div class="empty">— cannot read folder —</div>'; return; }
+  if(gen!==NAV_GEN) return;
+  const {dirs,files}=data;
+
+  if(files.length){
+    const here=document.createElement('div'); here.className='here';
+    here.innerHTML=`<span class="lbl">This folder holds <b>${files.length}</b> item${files.length>1?'s':''} directly.</span>`;
+    const b=document.createElement('button'); b.className='btn solid'; b.textContent='▶ View them'; b.onclick=()=>openReader(files,cur.name);
+    here.appendChild(b); m.appendChild(here);
+  }
+  if(!dirs.length && !files.length){ m.insertAdjacentHTML('beforeend','<div class="empty">— empty folder —</div>'); return; }
+  if(!dirs.length) return;
+
+  if(coverObs) coverObs.disconnect();
+  coverObs=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){coverObs.unobserve(e.target);schedule(()=>fillCard(e.target,gen));} }),{rootMargin:'500px'});
+
+  const grid=document.createElement('div'); grid.className='grid';
+  dirs.forEach((d,i)=>{
+    const card=document.createElement('div'); card.className='card';
+    card.style.animationDelay=Math.min(i*28,420)+'ms';
+    card.innerHTML=`<div class="cover shim"><div class="ph">📁</div><div class="badge"></div><div class="open-hint"></div></div>
+      <div class="meta"><span class="name">${escapeHtml(d.name)}</span><button class="enter" title="Go inside">›</button></div>`;
+    card._node=d;
+    card.querySelector('.enter').onclick=e=>{e.stopPropagation();enter(d);};
+    card.querySelector('.cover').onclick=()=>cardClick(card,d);
+    grid.appendChild(card); coverObs.observe(card);
+  });
+  m.appendChild(grid);
+}
+
+async function fillCard(card,gen){
+  if(gen!==NAV_GEN) return;
+  const d=card._node; let info;
+  try{ info=await listing(d.handle); }catch{ card.querySelector('.cover').classList.remove('shim'); return; }
+  card._info=info;
+  const {dirs,files}=info, badge=card.querySelector('.badge');
+  if(files.length){
+    const imgs=files.filter(f=>isImg(f.name)).length, vids=files.length-imgs;
+    if(imgs) badge.insertAdjacentHTML('beforeend',`<span class="chip">🖼 ${imgs}</span>`);
+    if(vids) badge.insertAdjacentHTML('beforeend',`<span class="chip vid">▶ ${vids}</span>`);
+  }
+  if(dirs.length) badge.insertAdjacentHTML('beforeend',`<span class="chip">📁 ${dirs.length}</span>`);
+  card.querySelector('.open-hint').textContent=files.length?'view ▸':'open ▸';
+
+  const cover=card.querySelector('.cover');
+  let cov=null; try{ cov=await findCover(d.handle); }catch{}
+  if(gen!==NAV_GEN){ cover.classList.remove('shim'); return; }
+  if(cov){
+    const u=await thumbURL(cov.handle).catch(()=>null);
+    if(u && gen===NAV_GEN){
+      const ph=cover.querySelector('.ph'); if(ph) ph.remove();
+      const img=document.createElement('img'); img.className='img'; img.decoding='async'; img.alt='';
+      img.onload=()=>img.classList.add('in'); img.src=u; cover.insertBefore(img,cover.firstChild);
+    } else if(u){ URL.revokeObjectURL(u); coverUrls.delete(u); }
+  }
+  cover.classList.remove('shim');
+}
+
+async function cardClick(card,d){
+  let info=card._info; if(!info){ try{ info=await listing(d.handle); }catch{ return; } }
+  if(info.files.length) openReader(info.files,d.name);
+  else if(info.dirs.length) enter(d);
+  else toast('Folder is empty');
+}
+
+/* ---------- reader ---------- */
+let R={items:[],i:0,mode:'scroll'}, pageObs, barTimer;
+function openReader(items,title){
+  R={items,i:0,mode:'scroll'};
+  $('#rtitle').textContent=title;
+  const r=$('#reader'); r.classList.add('on','open-anim'); setTimeout(()=>r.classList.remove('open-anim'),400);
+  document.body.style.overflow='hidden';
+  setMode('scroll');
+}
+function closeReader(){
+  $('#reader').classList.remove('on','hidebar');
+  document.body.style.overflow='';
+  $('#scroll').innerHTML=''; $('#stage').innerHTML='';
+  if(pageObs) pageObs.disconnect(); clearTimeout(barTimer); freeURLs();
+}
+function setMode(mode){
+  R.mode=mode;
+  $('#mScroll').classList.toggle('act',mode==='scroll');
+  $('#mPage').classList.toggle('act',mode==='paged');
+  $('#scroll').style.display=mode==='scroll'?'block':'none';
+  $('#paged').classList.toggle('on',mode==='paged');
+  $('#reader').classList.remove('hidebar'); clearTimeout(barTimer);
+  if(mode==='paged') armBar();
+  mode==='scroll'?buildScroll():buildPaged();
+}
+function counter(){ $('#rcount').textContent=R.mode==='paged'?`${R.i+1} / ${R.items.length}`:`${R.items.length} items`; }
+
+/* scroll — windowed: load near viewport, unload far (memory stays flat) */
+function buildScroll(){
+  counter();
+  const wrap=$('#scroll'); wrap.innerHTML=''; wrap.scrollTop=0;
+  if(pageObs) pageObs.disconnect();
+  pageObs=new IntersectionObserver(es=>es.forEach(e=>e.isIntersecting?loadItem(e.target):unloadItem(e.target)),{root:wrap,rootMargin:'1600px 0px'});
+  R.items.forEach((it,idx)=>{ const d=document.createElement('div'); d.className='item shim'; d._it=it; d._idx=idx; wrap.appendChild(d); pageObs.observe(d); });
+}
+async function loadItem(div){
+  if(div._loaded) return; div._loaded=true;
+  const it=div._it, u=await getURL(it.handle).catch(()=>null);
+  if(!u||!div.isConnected){ div._loaded=false; return; }
+  let el;
+  if(isVid(it.name)){ el=document.createElement('video'); el.controls=true; el.preload='metadata'; el.playsInline=true; }
+  else { el=document.createElement('img'); el.alt=it.name; el.decoding='async'; }
+  const show=()=>{ div.classList.remove('shim'); div.classList.add('loaded','shown'); };
+  el.onload=show; el.onloadeddata=show; el.onerror=()=>div.classList.remove('shim');
+  el.src=u; div.innerHTML=''; div.appendChild(el);
+}
+function unloadItem(div){
+  if(!div._loaded) return;
+  const h=div.offsetHeight; if(h) div.style.minHeight=h+'px';
+  const m=div.querySelector('img,video');
+  if(m){ const u=m.currentSrc||m.src; m.removeAttribute('src'); if(m.load)try{m.load();}catch{} releaseURL(div._it.handle,u); }
+  div.innerHTML=''; div.className='item shim'; div.style.minHeight=''; div._loaded=false;
+}
+
+/* paged */
+function buildPaged(){ showPage(R.i,0); }
+async function showPage(i,dir){
+  R.i=(i+R.items.length)%R.items.length; counter();
+  const it=R.items[R.i], stage=$('#stage');
+  $('#paged').classList.toggle('video',isVid(it.name));
+  const u=await getURL(it.handle).catch(()=>null); if(!u) return;
+  let el;
+  if(isVid(it.name)){ el=document.createElement('video'); el.controls=true; el.autoplay=true; el.playsInline=true; }
+  else { el=document.createElement('img'); el.alt=it.name; }
+  stage.style.transition='none'; stage.style.opacity='0'; stage.style.transform=`translateX(${(dir||0)*26}px)`;
+  el.onload=el.onloadeddata=()=>requestAnimationFrame(()=>{ stage.style.transition='opacity .18s ease,transform .24s var(--ease)'; stage.style.opacity='1'; stage.style.transform='none'; });
+  el.src=u; stage.innerHTML=''; stage.appendChild(el);
+  [R.i+1,R.i-1].forEach(j=>getURL(R.items[(j+R.items.length)%R.items.length].handle).catch(()=>{}));  // prefetch neighbours
+}
+const next=()=>R.mode==='paged'&&showPage(R.i+1,1);
+const prev=()=>R.mode==='paged'&&showPage(R.i-1,-1);
+
+/* floating arrows by proximity + auto-hiding bar (paged) */
+function armBar(){ clearTimeout(barTimer); barTimer=setTimeout(()=>{ if(R.mode==='paged') $('#reader').classList.add('hidebar'); },2600); }
+$('#paged').addEventListener('mousemove',e=>{
+  const w=innerWidth, x=e.clientX;
+  $('#navL').classList.toggle('show',x<w*.2);
+  $('#navR').classList.toggle('show',x>w*.8);
+  $('#reader').classList.remove('hidebar'); armBar();
+});
+$('#paged').addEventListener('mouseleave',()=>{ $('#navL').classList.remove('show'); $('#navR').classList.remove('show'); });
+
+/* ---------- wiring ---------- */
+$('#pick').onclick=pick;
+$('#rootBtn').onclick=pick;
+$('#rclose').onclick=closeReader;
+$('#mScroll').onclick=()=>setMode('scroll');
+$('#mPage').onclick=()=>setMode('paged');
+$('#navL').onclick=prev; $('#navR').onclick=next;
+$('#zL').onclick=prev; $('#zR').onclick=next;
+
+document.addEventListener('keydown',e=>{
+  if($('#reader').classList.contains('on')){
+    if(e.key==='Escape') closeReader();
+    else if(e.key==='ArrowRight'&&R.mode==='paged'){ e.preventDefault(); next(); }
+    else if(e.key==='ArrowLeft'&&R.mode==='paged'){ e.preventDefault(); prev(); }
+    else if(e.key.toLowerCase()==='m') setMode(R.mode==='scroll'?'paged':'scroll');
+    return;
+  }
+  if(e.key==='Backspace'&&$('#main').style.display!=='none'){ e.preventDefault(); up(); }
+});
+let tx=0;
+$('#paged').addEventListener('touchstart',e=>tx=e.changedTouches[0].clientX,{passive:true});
+$('#paged').addEventListener('touchend',e=>{ const dx=e.changedTouches[0].clientX-tx; if(Math.abs(dx)>50) dx<0?next():prev(); },{passive:true});
+
+let tT; function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('on'),1800); }
+function escapeHtml(s){ return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* startup: offer to reopen last folder */
+(async()=>{
+  if(!window.showDirectoryPicker){ $('#pick').disabled=true; $('#pick').textContent='Browser not supported'; toast('Use Chrome or Edge.'); return; }
+  try{ const h=await idbGet('meta','last'); if(h){ const b=$('#reopen'); b.style.display='inline-flex'; b.textContent='↻ Reopen "'+h.name+'"'; b.onclick=()=>reopen(h); } }catch{}
+})();
+</script>
+</body>
+</html>
