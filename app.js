@@ -7,7 +7,7 @@
   const IMG = ["jpg","jpeg","png","gif","webp","avif","bmp","jfif","svg"];
   const VID = ["mp4","webm","mov","m4v","mkv","ogv","ogg"];
   const COVER_DEPTH = 4, DIR_SCAN_CAP = 12, THUMB = 480, READ_MAX = 4;
-  const IMG_THUMB_TIMEOUT = 8000;
+  const IMG_THUMB_TIMEOUT = 8000, COVER_FIND_TIMEOUT = 6000;
   const THUMB_CACHE_MAX = 80 * 1048576;   // ~80 MB byte budget for the thumb store
 
   const $ = s => document.querySelector(s);
@@ -33,12 +33,21 @@
 
   /* ---------- preferences ---------- */
   let stored = {};
-  try { stored = JSON.parse(localStorage.getItem("gallery.prefs") || "{}") || {}; }
+  try { const parsed = JSON.parse(localStorage.getItem("gallery.prefs") || "{}"); if (parsed && typeof parsed === "object") stored = parsed; }
   catch (e) { dbg("prefs parse failed", e); stored = {}; }
   const prefs = Object.assign(
     { density:"cozy", scrollWidth:"medium", sort:"name", snap:true, slideMs:3500, readerMode:"auto" },
     stored
   );
+  // Clamp persisted values to known options — corrupted/hand-edited storage must
+  // not feed undefined into CSS-var lookups or blank the reader via setMode.
+  const oneOf = (v, allowed, def) => allowed.includes(v) ? v : def;
+  prefs.density    = oneOf(prefs.density,    ["compact","cozy","large"],            "cozy");
+  prefs.scrollWidth= oneOf(prefs.scrollWidth,["narrow","medium","full"],            "medium");
+  prefs.sort       = oneOf(prefs.sort,       ["name","nameDesc","date","size","shuffle"], "name");
+  prefs.readerMode = oneOf(prefs.readerMode, ["auto","scroll","paged"],             "auto");
+  prefs.snap       = !!prefs.snap;
+  if (!(Number.isFinite(+prefs.slideMs) && +prefs.slideMs > 0)) prefs.slideMs = 3500;
   const savePrefs = () => { try { localStorage.setItem("gallery.prefs", JSON.stringify(prefs)); } catch (e) { dbg("prefs save failed", e); } };
   function applyPrefs() {
     const de = document.documentElement;
@@ -184,14 +193,14 @@
     return new Promise(res => {
       const url = URL.createObjectURL(file), v = document.createElement("video");
       v.muted=true; v.preload="metadata"; v.playsInline=true; v.src=url;
-      let done=false; const fin = b => { if(done) return; done=true; URL.revokeObjectURL(url); res(b); };
+      let done=false, to; const fin = b => { if(done) return; done=true; clearTimeout(to); URL.revokeObjectURL(url); res(b); };
       const grab = () => { try {
         const w=THUMB, h=Math.max(1, Math.round(v.videoHeight*(THUMB/v.videoWidth)));
         const c=document.createElement("canvas"); c.width=w; c.height=h;
         c.getContext("2d").drawImage(v,0,0,w,h); c.toBlob(b=>fin(b),"image/webp",.8);
       } catch { fin(null); } };
       v.onloadeddata = () => { try { v.currentTime = Math.min(1, (v.duration||3)/3); } catch { grab(); } };
-      v.onseeked = grab; v.onerror = () => fin(null); setTimeout(()=>fin(null), 4000);
+      v.onseeked = grab; v.onerror = () => fin(null); to = setTimeout(()=>fin(null), 4000);
     });
   }
   // pathPrefix is the full directory path to the cover (excluding its own name),
@@ -408,7 +417,7 @@
     card.querySelector(".open-hint").textContent = dirs.length ? "enter ▸" : (files.length ? "view ▸" : "open ▸");
 
     const cover = card.querySelector(".cover");
-    let cov = null; try { cov = await findCover(d.handle); } catch (e) { dbg("findCover failed", e); }
+    let cov = null; try { cov = await withTimeout(findCover(d.handle), COVER_FIND_TIMEOUT); } catch (e) { dbg("findCover failed", e); }
     if (gen !== NAV_GEN){ busy(false); cover.classList.remove("shim"); return; }
     if (cov){
       const prefix = [card._path, d.name, cov.relPath].filter(Boolean).join("/");
@@ -621,8 +630,8 @@
     $("#settings").classList.add("on"); $("#backdrop").classList.add("on");
     $("#cacheStat").textContent = "calculating…";
     if (!wasOpen) $("#sClose").focus();
-    try { const { n, bytes } = await cacheStats(); $("#cacheStat").textContent = `${n} thumbnail${n!==1?"s":""} · ${fmtBytes(bytes)}`; }
-    catch { $("#cacheStat").textContent = "—"; }
+    try { const { n, bytes } = await cacheStats(); if ($("#settings").classList.contains("on")) $("#cacheStat").textContent = `${n} thumbnail${n!==1?"s":""} · ${fmtBytes(bytes)}`; }
+    catch { if ($("#settings").classList.contains("on")) $("#cacheStat").textContent = "—"; }
   }
   function closeSettings(){
     $("#settings").classList.remove("on"); $("#backdrop").classList.remove("on");

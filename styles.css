@@ -59,6 +59,13 @@ header{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px
 .btn.solid:hover{background:var(--accent2);box-shadow:0 6px 18px -8px rgba(232,146,58,.7)}
 .btn.ghost{color:var(--dim)} .btn.ghost:hover{color:var(--txt)}
 .btn.icon{padding:7px 10px;font-size:15px}
+/* gear: rotate on hover (mirrors the #rclose hover-rotate idiom) */
+#settingsBtn{transition:border-color .15s,background .15s,color .2s,transform .25s var(--ease),box-shadow .15s}
+#settingsBtn:hover{color:var(--accent);transform:rotate(35deg)}
+
+/* unified tactile press feedback on icon-style buttons (matches .btn:active) */
+.rclose:active,.seg button:active,.enter:active,.recents .rec:active,.crumbs button:active{transform:translateY(1px) scale(.97)}
+.rclose,.seg button,.enter,.recents .rec,.crumbs button{transition-property:color,background,border-color,transform;transition-duration:.15s}
 
 /* intro */
 #intro{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;gap:20px}
@@ -120,6 +127,9 @@ main{padding:20px 18px 90px;max-width:1600px;margin:0 auto}
 .rclose:hover{color:var(--txt);border-color:var(--accent)}
 .rclose.act{color:var(--accent);border-color:var(--accent);background:var(--panel)}
 #rclose:hover{color:var(--bad);border-color:var(--bad);transform:rotate(90deg)}
+/* gentle breathing glow while a slideshow is running */
+#slide[aria-pressed="true"]{color:var(--accent);border-color:var(--accent);animation:pulse 1.8s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(232,146,58,0)}50%{box-shadow:0 0 0 4px rgba(232,146,58,.16)}}
 
 /* paged image-info overlay */
 .rinfo{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:5;max-width:92vw;
@@ -148,6 +158,16 @@ main{padding:20px 18px 90px;max-width:1600px;margin:0 auto}
 /* settings drawer */
 .drawer{position:fixed;top:0;right:0;height:100dvh;width:336px;max-width:88vw;z-index:120;background:var(--bg2);border-left:1px solid var(--line2);transform:translateX(102%);transition:transform .28s var(--ease);display:flex;flex-direction:column;overflow-y:auto;box-shadow:-20px 0 50px -30px #000}
 .drawer.on{transform:none}
+/* sections ease in when the drawer opens (reuses the reader's fadeUp).
+   .dhead is the drawer's first div, so the .sect blocks are type-positions 2–8. */
+.drawer.on .sect{animation:fadeUp .3s var(--ease) both}
+.drawer.on .sect:nth-of-type(2){animation-delay:.04s}
+.drawer.on .sect:nth-of-type(3){animation-delay:.08s}
+.drawer.on .sect:nth-of-type(4){animation-delay:.12s}
+.drawer.on .sect:nth-of-type(5){animation-delay:.16s}
+.drawer.on .sect:nth-of-type(6){animation-delay:.2s}
+.drawer.on .sect:nth-of-type(7){animation-delay:.24s}
+.drawer.on .sect:nth-of-type(8){animation-delay:.28s}
 #backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:110;opacity:0;pointer-events:none;transition:opacity .25s}
 #backdrop.on{opacity:1;pointer-events:auto}
 .dhead{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:13px;color:var(--txt);position:sticky;top:0;background:var(--bg2);z-index:1}
