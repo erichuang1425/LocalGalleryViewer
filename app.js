@@ -7,6 +7,7 @@
   const IMG = ["jpg","jpeg","png","gif","webp","avif","bmp","jfif","svg"];
   const VID = ["mp4","webm","mov","m4v","mkv","ogv","ogg"];
   const COVER_DEPTH = 4, DIR_SCAN_CAP = 12, THUMB = 480, READ_MAX = 4;
+  const IMG_THUMB_TIMEOUT = 8000;
 
   const $ = s => document.querySelector(s);
   const ext = n => (n.split(".").pop() || "").toLowerCase();
@@ -17,17 +18,27 @@
   const fmtBytes = b => b < 1024 ? b + " B" : b < 1048576 ? (b/1024).toFixed(0) + " KB" : (b/1048576).toFixed(1) + " MB";
   const escapeHtml = s => s.replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 
+  /* ---------- diagnostics (opt-in via ?debug) ---------- */
+  const DEBUG = /[?&]debug/.test(location.search);
+  const dbg = (...a) => { if (DEBUG) console.warn("[gallery]", ...a); };
+
+  /* ---------- browser-support detection ---------- */
+  const FALLBACK = !window.showDirectoryPicker;   // Firefox / Safari path
+
   let root = null, stack = [], NAV_GEN = 0;
   const urls = new Map();          // reader full-res handle -> objectURL
   const coverUrls = new Set();     // grid thumb URLs (revoked on re-render)
   const dirCache = new WeakMap();  // dirHandle -> {dirs,files}
 
   /* ---------- preferences ---------- */
+  let stored = {};
+  try { stored = JSON.parse(localStorage.getItem("gallery.prefs") || "{}") || {}; }
+  catch (e) { dbg("prefs parse failed", e); stored = {}; }
   const prefs = Object.assign(
-    { density:"cozy", scrollWidth:"medium", sort:"name", snap:true },
-    JSON.parse(localStorage.getItem("gallery.prefs") || "{}")
+    { density:"cozy", scrollWidth:"medium", sort:"name", snap:true, slideMs:3500 },
+    stored
   );
-  const savePrefs = () => localStorage.setItem("gallery.prefs", JSON.stringify(prefs));
+  const savePrefs = () => { try { localStorage.setItem("gallery.prefs", JSON.stringify(prefs)); } catch (e) { dbg("prefs save failed", e); } };
   function applyPrefs() {
     const de = document.documentElement;
     de.style.setProperty("--card-min", { compact:"160px", cozy:"216px", large:"300px" }[prefs.density]);
@@ -37,10 +48,11 @@
     markSeg("segWidth",   prefs.scrollWidth);
     markSeg("segSort",    prefs.sort);
     markSeg("segSnap",    prefs.snap ? "on" : "off");
+    markSeg("segSlide",   String(prefs.slideMs));
   }
   function markSeg(id, val) {
-    document.getElementById(id).querySelectorAll("button")
-      .forEach(b => b.classList.toggle("act", b.dataset.v === val));
+    const el = document.getElementById(id); if (!el) return;
+    el.querySelectorAll("button").forEach(b => b.classList.toggle("act", b.dataset.v === String(val)));
   }
   function sorted(arr) {
     const a = arr.slice();
@@ -82,12 +94,17 @@
     files.sort((a,b)=>natCmp(a.name,b.name));
     const out = { dirs, files }; dirCache.set(h,out); return out;
   }
-  async function findCover(h, depth=0){
+  // Returns { file, relPath } where relPath is the descent path (subfolder names)
+  // taken from h down to the cover file — "" when the cover sits directly in h.
+  async function findCover(h, depth=0, rel=""){
     const { dirs, files } = await listing(h);
     const hit = files.find(f=>isImg(f.name)) || files.find(f=>isVid(f.name));
-    if (hit) return hit;
+    if (hit) return { file: hit, relPath: rel };
     if (depth < COVER_DEPTH){
-      for (const d of dirs.slice(0,DIR_SCAN_CAP)){ const c = await findCover(d.handle, depth+1); if (c) return c; }
+      for (const d of dirs.slice(0,DIR_SCAN_CAP)){
+        const c = await findCover(d.handle, depth+1, rel ? rel + "/" + d.name : d.name);
+        if (c) return c;
+      }
     }
     return null;
   }
@@ -95,7 +112,16 @@
   function releaseURL(fh,u){ if (urls.get(fh) === u){ URL.revokeObjectURL(u); urls.delete(fh); } }
   function freeURLs(){ for (const u of urls.values()) URL.revokeObjectURL(u); urls.clear(); }
 
+  /* ---------- media element factory ---------- */
+  function makeVideo({ autoplay=false, preload="metadata" } = {}){
+    const v = document.createElement("video");
+    v.controls = true; v.playsInline = true; v.preload = preload;
+    if (autoplay) v.autoplay = true;
+    return v;
+  }
+
   /* ---------- thumbnails ---------- */
+  const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
   async function imgThumb(file){
     try{
       let bmp;
@@ -107,7 +133,7 @@
       c.getContext("2d").drawImage(bmp,0,0,w,h); bmp.close && bmp.close();
       return c.convertToBlob ? await c.convertToBlob({ type:"image/webp", quality:.8 })
                              : await new Promise(r => c.toBlob(r, "image/webp", .8));
-    } catch { return null; }
+    } catch (e) { dbg("imgThumb failed", file.name, e); return null; }
   }
   function videoThumb(file){
     return new Promise(res => {
@@ -123,30 +149,86 @@
       v.onseeked = grab; v.onerror = () => fin(null); setTimeout(()=>fin(null), 4000);
     });
   }
-  async function thumbURL(fh){
+  // pathPrefix is the full directory path to the cover (excluding its own name),
+  // so identically-named/sized siblings in different folders never collide.
+  async function thumbURL(fh, pathPrefix=""){
     const file = await fh.getFile();                         // metadata read — cheap
     if (ext(file.name) === "svg"){ const u = URL.createObjectURL(file); coverUrls.add(u); return u; }
-    const key = file.name + "|" + file.size + "|" + file.lastModified;
+    const key = pathPrefix + "|" + file.name + "|" + file.size + "|" + file.lastModified;
     let blob = await idbGet("thumbs", key).catch(()=>null);
-    if (!blob){ blob = isVid(file.name) ? await videoThumb(file) : await imgThumb(file); if (blob) idbPut("thumbs", key, blob).catch(()=>{}); }
+    if (!blob){
+      blob = isVid(file.name) ? await videoThumb(file) : await withTimeout(imgThumb(file), IMG_THUMB_TIMEOUT);
+      if (blob) idbPut("thumbs", key, blob).catch(e => dbg("thumb cache put failed", e));
+    }
     if (!blob) return null;
     const u = URL.createObjectURL(blob); coverUrls.add(u); return u;
+  }
+  function insertCover(cover, u){
+    const ph = cover.querySelector(".ph"); if (ph) ph.remove();
+    const img = document.createElement("img"); img.className="img"; img.decoding="async"; img.alt="";
+    img.onload = () => img.classList.add("in"); img.src = u; cover.insertBefore(img, cover.firstChild);
   }
 
   /* ---------- progress ---------- */
   let busyN = 0;
   function busy(on){ busyN = Math.max(0, busyN + (on?1:-1)); $("#prog").classList.toggle("go", busyN>0); }
 
-  /* ---------- recents ---------- */
+  /* ---------- recents (real handles only — virtual handles can't persist) ---------- */
   async function addRecent(h){
+    if (FALLBACK) return;
     let recents = []; try { recents = (await idbGet("meta","recents")) || []; } catch {}
     const out = [h];
-    for (const r of recents){ try { if (!(await h.isSameEntry(r))) out.push(r); } catch { out.push(r); } if (out.length>=6) break; }
-    idbPut("meta","recents", out.slice(0,6)).catch(()=>{});
+    for (const r of recents){ try { if (!(await h.isSameEntry(r))) out.push(r); } catch (e) { dbg("isSameEntry failed", e); out.push(r); } if (out.length>=6) break; }
+    idbPut("meta","recents", out.slice(0,6)).catch(e => dbg("recents put failed", e));
+  }
+
+  /* ---------- virtual handles (Firefox / Safari fallback) ---------- */
+  function VirtualFileHandle(file){ this.kind="file"; this.name=file.name; this._file=file; }
+  VirtualFileHandle.prototype.getFile = function(){ return Promise.resolve(this._file); };
+  VirtualFileHandle.prototype.isSameEntry = function(o){ return Promise.resolve(o === this); };
+  function VirtualDirHandle(name){ this.kind="directory"; this.name=name; this._children=[]; }
+  VirtualDirHandle.prototype.values = async function*(){ for (const c of this._children) yield c; };
+  VirtualDirHandle.prototype.isSameEntry = function(o){ return Promise.resolve(o === this); };
+  // Build one stable virtual tree per pick (stable identities for dirCache WeakMap).
+  function buildVirtualRoot(fileList){
+    const files = [...fileList].filter(f => isMedia(f.name));
+    if (!files.length) return null;
+    const rootName = files[0].webkitRelativePath.split("/")[0] || "Folder";
+    const rootDir = new VirtualDirHandle(rootName);
+    const dirMap = new Map([[rootName, rootDir]]);
+    for (const file of files){
+      const parts = file.webkitRelativePath.split("/");   // [root, …subdirs…, filename]
+      let parent = rootDir, parentPath = rootName;
+      for (let i=1; i<parts.length-1; i++){
+        const childPath = parentPath + "/" + parts[i];
+        let dir = dirMap.get(childPath);
+        if (!dir){ dir = new VirtualDirHandle(parts[i]); parent._children.push(dir); dirMap.set(childPath, dir); }
+        parent = dir; parentPath = childPath;
+      }
+      parent._children.push(new VirtualFileHandle(file));
+    }
+    return rootDir;
+  }
+  let fileInput;
+  function pickFallback(){
+    if (!fileInput){
+      fileInput = document.createElement("input");
+      fileInput.type = "file"; fileInput.multiple = true;
+      fileInput.webkitdirectory = true;
+      fileInput.style.display = "none"; document.body.appendChild(fileInput);
+      fileInput.addEventListener("change", () => {
+        const r = buildVirtualRoot(fileInput.files);
+        fileInput.value = "";
+        if (!r){ toast("No media found in that folder"); return; }
+        root = r; launch();
+      });
+    }
+    fileInput.click();
   }
 
   /* ---------- navigation ---------- */
   async function pick(){
+    if (FALLBACK){ pickFallback(); return; }
     let h; try { h = await window.showDirectoryPicker({ mode:"read" }); } catch { return; }
     root = h; await addRecent(h); launch();
   }
@@ -167,6 +249,7 @@
       const b = document.createElement("button"); b.textContent = n.name; b.title = n.name; b.onclick = () => goTo(i); c.appendChild(b);
     });
   }
+  const stackPath = () => stack.map(n => n.name).join("/");
 
   /* ---------- browse ---------- */
   let coverObs;
@@ -177,44 +260,77 @@
     crumbs();
     const cur = stack[stack.length-1], m = $("#main"); m.innerHTML = "";
     busy(true);
-    let data; try { data = await listing(cur.handle); } catch { busy(false); m.innerHTML = '<div class="empty">— cannot read folder —</div>'; return; }
+    let data; try { data = await listing(cur.handle); } catch (e) { dbg("listing failed", e); busy(false); m.innerHTML = '<div class="empty">— cannot read folder —</div>'; return; }
     busy(false);
     if (gen !== NAV_GEN) return;
     const dirs = sorted(data.dirs), files = sorted(data.files);
 
-    if (files.length){
-      const here = document.createElement("div"); here.className = "here";
-      here.innerHTML = `<span class="lbl">This folder holds <b>${files.length}</b> item${files.length>1?"s":""} directly.</span>`;
-      const b = document.createElement("button"); b.className="btn solid"; b.textContent="▶ View them"; b.onclick = () => openReader(files, cur.name);
-      here.appendChild(b); m.appendChild(here);
-    }
-    if (!dirs.length && !files.length){ m.insertAdjacentHTML("beforeend", '<div class="empty">— empty folder —</div>'); return; }
-    if (!dirs.length) return;
+    if (!dirs.length && !files.length){ m.innerHTML = '<div class="empty">— empty folder —</div>'; return; }
 
     if (coverObs) coverObs.disconnect();
     coverObs = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting){ coverObs.unobserve(e.target); schedule(() => fillCard(e.target, gen)); } }), { rootMargin:"500px" });
 
+    // Unified grid: folders first, then per-file media cards (each group already sorted).
+    const entries = [];
+    dirs.forEach(d => entries.push({ type:"dir", node:d }));
+    files.forEach((f,k) => entries.push({ type:"file", node:f, index:k }));
+
+    const curPath = stackPath();
     const grid = document.createElement("div"); grid.className = "grid";
-    dirs.forEach((d,i) => {
+    entries.forEach((entry, i) => {
+      const node = entry.node;
       const card = document.createElement("div"); card.className = "card";
       card.style.animationDelay = Math.min(i*28, 420) + "ms";
-      card._name = d.name.toLowerCase();
-      card.innerHTML =
-        '<div class="cover shim"><div class="ph">📁</div><div class="badge"></div><div class="open-hint"></div></div>' +
-        '<div class="meta"><span class="name">' + escapeHtml(d.name) + '</span><button class="enter" title="Go inside">›</button></div>';
-      card._node = d;
-      card.querySelector(".enter").onclick = e => { e.stopPropagation(); enter(d); };
-      card.querySelector(".cover").onclick = () => cardClick(card, d);
+      card._name = node.name.toLowerCase();
+      card._entry = entry;
+      card._path = curPath;
+
+      if (entry.type === "dir"){
+        card.innerHTML =
+          '<div class="cover shim"><div class="ph">📁</div><div class="badge"></div><div class="open-hint"></div></div>' +
+          '<div class="meta"><span class="name">' + escapeHtml(node.name) + '</span><button class="enter" title="Go inside" aria-label="Enter folder">›</button></div>';
+        card._node = node;
+        card.querySelector(".enter").onclick = e => { e.stopPropagation(); enter(node); };
+        card.querySelector(".cover").onclick = () => cardClick(card, node);
+        card.setAttribute("aria-label", "Open folder " + node.name);
+      } else {
+        const glyph = isVid(node.name) ? "🎞" : "🖼";
+        const chip = isVid(node.name)
+          ? '<span class="chip vid">▶</span>'
+          : '<span class="chip">' + escapeHtml(ext(node.name) || "img") + '</span>';
+        card.innerHTML =
+          '<div class="cover shim"><div class="ph">' + glyph + '</div><div class="badge">' + chip + '</div><div class="open-hint">view ▸</div></div>' +
+          '<div class="meta"><span class="name">' + escapeHtml(node.name) + '</span></div>';
+        card.querySelector(".cover").onclick = () => openReaderAt(files, cur.name, node, "paged");
+        card.setAttribute("aria-label", "Open " + node.name);
+      }
+
+      card.setAttribute("role", "button");
+      card.setAttribute("tabindex", "0");
+      card.addEventListener("keydown", e => { if (e.target === card && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); card.querySelector(".cover").click(); } });
       grid.appendChild(card); coverObs.observe(card);
     });
     m.appendChild(grid);
   }
 
-  async function fillCard(card, gen){
+  function fillCard(card, gen){
     if (gen !== NAV_GEN) return;
+    return card._entry.type === "file" ? fillFileCard(card, gen) : fillDirCard(card, gen);
+  }
+
+  async function fillFileCard(card, gen){
+    const f = card._entry.node, cover = card.querySelector(".cover");
+    busy(true);
+    let u = null; try { u = await thumbURL(f.handle, card._path); } catch (e) { dbg("file thumb failed", f.name, e); }
+    if (gen !== NAV_GEN){ busy(false); if (u){ URL.revokeObjectURL(u); coverUrls.delete(u); } cover.classList.remove("shim"); return; }
+    if (u) insertCover(cover, u);
+    cover.classList.remove("shim"); busy(false);
+  }
+
+  async function fillDirCard(card, gen){
     const d = card._node; let info;
     busy(true);
-    try { info = await listing(d.handle); } catch { busy(false); card.querySelector(".cover").classList.remove("shim"); return; }
+    try { info = await listing(d.handle); } catch (e) { dbg("dir card listing failed", e); busy(false); card.querySelector(".cover").classList.remove("shim"); return; }
     card._info = info;
     const { dirs, files } = info, badge = card.querySelector(".badge");
     if (files.length){
@@ -223,26 +339,26 @@
       if (vids) badge.insertAdjacentHTML("beforeend", `<span class="chip vid">▶ ${vids}</span>`);
     }
     if (dirs.length) badge.insertAdjacentHTML("beforeend", `<span class="chip">📁 ${dirs.length}</span>`);
-    card.querySelector(".open-hint").textContent = files.length ? "view ▸" : "open ▸";
+    card.querySelector(".open-hint").textContent = dirs.length ? "enter ▸" : (files.length ? "view ▸" : "open ▸");
 
     const cover = card.querySelector(".cover");
-    let cov = null; try { cov = await findCover(d.handle); } catch {}
+    let cov = null; try { cov = await findCover(d.handle); } catch (e) { dbg("findCover failed", e); }
     if (gen !== NAV_GEN){ busy(false); cover.classList.remove("shim"); return; }
     if (cov){
-      const u = await thumbURL(cov.handle).catch(()=>null);
-      if (u && gen === NAV_GEN){
-        const ph = cover.querySelector(".ph"); if (ph) ph.remove();
-        const img = document.createElement("img"); img.className="img"; img.decoding="async"; img.alt="";
-        img.onload = () => img.classList.add("in"); img.src = u; cover.insertBefore(img, cover.firstChild);
-      } else if (u){ URL.revokeObjectURL(u); coverUrls.delete(u); }
+      const prefix = [card._path, d.name, cov.relPath].filter(Boolean).join("/");
+      const u = await thumbURL(cov.file.handle, prefix).catch(e => { dbg("dir thumb failed", e); return null; });
+      if (u && gen === NAV_GEN) insertCover(cover, u);
+      else if (u){ URL.revokeObjectURL(u); coverUrls.delete(u); }
     }
     cover.classList.remove("shim"); busy(false);
   }
 
+  // Folder-card cover click: subdirs present → enter (even if media also exists);
+  // media-only leaf → open as an album; empty → toast.
   async function cardClick(card, d){
-    let info = card._info; if (!info){ try { info = await listing(d.handle); } catch { return; } }
-    if (info.files.length) openReader(info.files, d.name);
-    else if (info.dirs.length) enter(d);
+    let info = card._info; if (!info){ try { info = await listing(d.handle); } catch (e) { dbg("cardClick listing failed", e); return; } }
+    if (info.dirs.length) enter(d);
+    else if (info.files.length) openReader(info.files, d.name);
     else toast("Folder is empty");
   }
 
@@ -253,27 +369,42 @@
 
   /* ---------- reader ---------- */
   let R = { items:[], i:0, mode:"scroll" }, pageObs, barTimer, slideTimer = null;
-  function openReader(items, title){
-    R = { items: sorted(items), i:0, mode:"scroll" };
+  let infoOn = false, readerFocus = null, settingsFocus = null;
+
+  function openReader(items, title){ openReaderAt(sorted(items), title, null, "scroll"); }
+  // `items` is already in display order; open at a specific item by reference
+  // identity so the reader's sequence matches the grid the user just saw.
+  function openReaderAt(items, title, startItem, mode){
+    if (!items.length) return;
+    R = { items: items.slice(), i:0, mode:"scroll" };
+    if (startItem){ const idx = R.items.indexOf(startItem); if (idx >= 0) R.i = idx; }
     $("#rtitle").textContent = title;
+    readerFocus = document.activeElement;
     const r = $("#reader"); r.classList.add("on","open-anim"); setTimeout(()=>r.classList.remove("open-anim"), 400);
     document.body.style.overflow = "hidden";
-    setMode("scroll");
+    setMode(mode || "scroll");
+    $("#rclose").focus();
   }
   function closeReader(){
     stopSlide();
+    if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
     $("#reader").classList.remove("on","hidebar");
     document.body.style.overflow = "";
     $("#scroll").innerHTML = ""; $("#stage").innerHTML = "";
     if (pageObs) pageObs.disconnect(); clearTimeout(barTimer); freeURLs();
+    infoOn = false; $("#rinfo").classList.remove("on");
+    $("#infoBtn").classList.remove("act"); $("#infoBtn").setAttribute("aria-pressed", "false");
+    if (readerFocus && readerFocus.focus){ try { readerFocus.focus(); } catch {} }
+    readerFocus = null;
   }
   function setMode(mode){
     if (mode !== "paged") stopSlide();
     R.mode = mode;
-    $("#mScroll").classList.toggle("act", mode==="scroll");
-    $("#mPage").classList.toggle("act", mode==="paged");
+    $("#mScroll").classList.toggle("act", mode==="scroll"); $("#mScroll").setAttribute("aria-pressed", mode==="scroll");
+    $("#mPage").classList.toggle("act", mode==="paged");    $("#mPage").setAttribute("aria-pressed", mode==="paged");
     $("#scroll").style.display = mode==="scroll" ? "block" : "none";
     $("#paged").classList.toggle("on", mode==="paged");
+    $("#rinfo").classList.toggle("on", infoOn && mode==="paged");
     $("#reader").classList.remove("hidebar"); clearTimeout(barTimer);
     if (mode === "paged") armBar();
     mode === "scroll" ? buildScroll() : buildPaged();
@@ -290,10 +421,10 @@
   }
   async function loadItem(div){
     if (div._loaded) return; div._loaded = true;
-    const it = div._it, u = await getURL(it.handle).catch(()=>null);
+    const it = div._it, u = await getURL(it.handle).catch(e => { dbg("loadItem getURL failed", e); return null; });
     if (!u || !div.isConnected){ div._loaded = false; return; }
     let el;
-    if (isVid(it.name)){ el=document.createElement("video"); el.controls=true; el.preload="metadata"; el.playsInline=true; }
+    if (isVid(it.name)){ el = makeVideo({ preload:"metadata" }); }
     else { el=document.createElement("img"); el.alt=it.name; el.decoding="async"; }
     const show = () => { div.classList.remove("shim"); div.classList.add("loaded","shown"); };
     el.onload = show; el.onloadeddata = show; el.onerror = () => div.classList.remove("shim");
@@ -313,35 +444,90 @@
     R.i = (i + R.items.length) % R.items.length; counter();
     const it = R.items[R.i], stage = $("#stage");
     $("#paged").classList.toggle("video", isVid(it.name));
-    const u = await getURL(it.handle).catch(()=>null); if (!u) return;
+    const u = await getURL(it.handle).catch(e => { dbg("showPage getURL failed", e); return null; }); if (!u) return;
     let el;
-    if (isVid(it.name)){ el=document.createElement("video"); el.controls=true; el.autoplay=true; el.playsInline=true; }
+    if (isVid(it.name)){ el = makeVideo({ autoplay:true }); }
     else { el=document.createElement("img"); el.alt=it.name; }
     stage.style.transition = "none"; stage.style.opacity = "0"; stage.style.transform = `translateX(${(dir||0)*26}px)`;
-    el.onload = el.onloadeddata = () => requestAnimationFrame(() => {
-      stage.style.transition = "opacity .18s ease, transform .24s var(--ease)"; stage.style.opacity = "1"; stage.style.transform = "none"; });
+    el.onload = el.onloadeddata = () => {
+      requestAnimationFrame(() => {
+        stage.style.transition = "opacity .18s ease, transform .24s var(--ease)"; stage.style.opacity = "1"; stage.style.transform = "none"; });
+      if (infoOn) updateInfo(it, el);
+    };
     el.src = u; stage.innerHTML = ""; stage.appendChild(el);
     [R.i+1, R.i-1].forEach(j => getURL(R.items[(j + R.items.length) % R.items.length].handle).catch(()=>{})); // prefetch
   }
   const next = () => R.mode==="paged" && showPage(R.i+1, 1);
   const prev = () => R.mode==="paged" && showPage(R.i-1, -1);
 
+  /* image-info overlay (paged only) */
+  async function updateInfo(it, el){
+    const w = el.naturalWidth || el.videoWidth || 0, h = el.naturalHeight || el.videoHeight || 0;
+    let size = 0; try { size = (await it.handle.getFile()).size; } catch (e) { dbg("info size failed", e); }
+    $("#rinfo").textContent = `${it.name} · ${w}×${h} · ${fmtBytes(size)}`;
+  }
+  function toggleInfo(){
+    infoOn = !infoOn;
+    $("#rinfo").classList.toggle("on", infoOn && R.mode==="paged");
+    const b = $("#infoBtn"); b.classList.toggle("act", infoOn); b.setAttribute("aria-pressed", String(infoOn));
+    if (infoOn && R.mode==="paged"){ const cur = $("#stage").querySelector("img,video"); if (cur) updateInfo(R.items[R.i], cur); }
+  }
+
+  /* download current paged item */
+  async function downloadCurrent(){
+    if (R.mode !== "paged" || !R.items.length){ toast("Open an item in pages mode"); return; }
+    const it = R.items[R.i];
+    const u = await getURL(it.handle).catch(()=>null); if (!u) return;
+    const a = document.createElement("a"); a.href = u; a.download = it.name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  /* fullscreen */
+  function toggleFullscreen(){
+    if (document.fullscreenElement) document.exitFullscreen().catch(e => dbg("exitFS failed", e));
+    else { const r = $("#reader"); if (r.requestFullscreen) r.requestFullscreen().catch(e => dbg("requestFS failed", e)); }
+  }
+  document.addEventListener("fullscreenchange", () => {
+    const on = !!document.fullscreenElement, b = $("#fsBtn");
+    b.classList.toggle("act", on); b.setAttribute("aria-pressed", String(on)); b.textContent = on ? "⤢" : "⛶";
+  });
+
   /* slideshow */
-  function startSlide(){ if (R.mode!=="paged") setMode("paged"); clearInterval(slideTimer); slideTimer = setInterval(next, 3500); $("#slide").textContent = "⏸"; }
-  function stopSlide(){ if (!slideTimer) return; clearInterval(slideTimer); slideTimer = null; const s=$("#slide"); if (s) s.textContent = "▶"; }
+  function startSlide(){ if (R.mode!=="paged") setMode("paged"); clearInterval(slideTimer); slideTimer = setInterval(next, +prefs.slideMs || 3500); const s=$("#slide"); s.textContent = "⏸"; s.setAttribute("aria-pressed","true"); }
+  function stopSlide(){ if (!slideTimer) return; clearInterval(slideTimer); slideTimer = null; const s=$("#slide"); if (s){ s.textContent = "▶"; s.setAttribute("aria-pressed","false"); } }
   function toggleSlide(){ slideTimer ? stopSlide() : startSlide(); }
 
   /* floating arrows by proximity + auto-hiding bar (paged) */
   function armBar(){ clearTimeout(barTimer); barTimer = setTimeout(() => { if (R.mode==="paged") $("#reader").classList.add("hidebar"); }, 2600); }
 
+  /* ---------- focus trapping ---------- */
+  function focusables(container){
+    return [...container.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')]
+      .filter(el => !el.disabled && el.offsetParent !== null);
+  }
+  function trapTab(e, container){
+    if (e.key !== "Tab") return;
+    const f = focusables(container); if (!f.length) return;
+    const first = f[0], last = f[f.length-1];
+    if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+  }
+
   /* ---------- settings drawer ---------- */
   async function openSettings(){
+    const wasOpen = $("#settings").classList.contains("on");
+    if (!wasOpen){ settingsFocus = document.activeElement; }   // don't clobber the restore target on re-open (e.g. after Clear cache)
     $("#settings").classList.add("on"); $("#backdrop").classList.add("on");
     $("#cacheStat").textContent = "calculating…";
+    if (!wasOpen) $("#sClose").focus();
     try { const { n, bytes } = await cacheStats(); $("#cacheStat").textContent = `${n} thumbnail${n!==1?"s":""} · ${fmtBytes(bytes)}`; }
     catch { $("#cacheStat").textContent = "—"; }
   }
-  function closeSettings(){ $("#settings").classList.remove("on"); $("#backdrop").classList.remove("on"); }
+  function closeSettings(){
+    $("#settings").classList.remove("on"); $("#backdrop").classList.remove("on");
+    if (settingsFocus && settingsFocus.focus){ try { settingsFocus.focus(); } catch {} }
+    settingsFocus = null;
+  }
   function bindSeg(id, key, after){
     document.getElementById(id).querySelectorAll("button").forEach(b => b.onclick = () => {
       prefs[key] = key === "snap" ? (b.dataset.v === "on") : b.dataset.v;
@@ -359,6 +545,9 @@
   $("#mScroll").onclick = () => setMode("scroll");
   $("#mPage").onclick = () => setMode("paged");
   $("#slide").onclick = toggleSlide;
+  $("#fsBtn").onclick = toggleFullscreen;
+  $("#infoBtn").onclick = toggleInfo;
+  $("#dlBtn").onclick = downloadCurrent;
   $("#navL").onclick = prev; $("#navR").onclick = next;
   $("#zL").onclick = prev; $("#zR").onclick = next;
   $("#filter").oninput = e => filterCards(e.target.value);
@@ -370,6 +559,7 @@
   bindSeg("segDensity", "density");
   bindSeg("segWidth", "scrollWidth");
   bindSeg("segSnap", "snap");
+  bindSeg("segSlide", "slideMs", () => { if (slideTimer) startSlide(); });
   bindSeg("segSort", "sort", () => { if (stack.length) render(); });
 
   $("#paged").addEventListener("mousemove", e => {
@@ -380,11 +570,18 @@
   });
   $("#paged").addEventListener("mouseleave", () => { $("#navL").classList.remove("show"); $("#navR").classList.remove("show"); });
 
+  // Keep focus from landing on the hidden auto-hiding bar — reveal it on focus.
+  $("#reader").addEventListener("focusin", () => { if (R.mode==="paged"){ $("#reader").classList.remove("hidebar"); armBar(); } });
+
   document.addEventListener("keydown", e => {
-    if ($("#settings").classList.contains("on")){ if (e.key === "Escape") closeSettings(); return; }
+    if ($("#settings").classList.contains("on")){
+      if (e.key === "Escape"){ closeSettings(); return; }
+      trapTab(e, $("#settings")); return;
+    }
     if ($("#reader").classList.contains("on")){
       const wrap = $("#scroll");
-      if (e.key === "Escape") closeReader();
+      trapTab(e, $("#reader"));
+      if (e.key === "Escape"){ if (document.fullscreenElement) return; closeReader(); }   // let browser exit FS first
       else if (e.key === "ArrowRight" && R.mode==="paged"){ e.preventDefault(); next(); }
       else if (e.key === "ArrowLeft"  && R.mode==="paged"){ e.preventDefault(); prev(); }
       else if (e.key === " "){ e.preventDefault(); R.mode==="paged" ? next() : wrap.scrollBy({ top: wrap.clientHeight*.9, behavior:"smooth" }); }
@@ -392,6 +589,8 @@
       else if (e.key === "End"){ e.preventDefault(); R.mode==="paged" ? showPage(R.items.length-1,1) : wrap.scrollTo({ top:wrap.scrollHeight, behavior:"smooth" }); }
       else if (e.key.toLowerCase() === "m") setMode(R.mode==="scroll" ? "paged" : "scroll");
       else if (e.key.toLowerCase() === "s") toggleSlide();
+      else if (e.key.toLowerCase() === "f"){ e.preventDefault(); toggleFullscreen(); }
+      else if (e.key.toLowerCase() === "i"){ e.preventDefault(); toggleInfo(); }
       return;
     }
     if (e.key === "Backspace" && $("#main").style.display !== "none"){ e.preventDefault(); up(); }
@@ -406,11 +605,16 @@
   /* ---------- startup ---------- */
   (async () => {
     applyPrefs();
-    if (!window.showDirectoryPicker){ $("#pick").disabled = true; $("#pick").textContent = "Browser not supported"; toast("Use Chrome or Edge."); return; }
+    if (FALLBACK){
+      // No durable handle model → no recents / re-grant. Use the input-folder fallback.
+      $("#recents").style.display = "none";
+      $("#introNote").innerHTML = "Runs <b>on your machine</b> — nothing uploaded. This browser lacks the File System Access API, so Gallery uses a <b>folder picker fallback</b>: the whole folder is read up front, and <b>recent folders are unavailable</b>. For the smoothest experience use <b>Chrome / Edge</b>.";
+      return;
+    }
     try {
       const recents = (await idbGet("meta","recents")) || [];
       const box = $("#recents");
       recents.slice(0,5).forEach(h => { const b=document.createElement("button"); b.className="rec"; b.textContent = "↻ " + h.name; b.onclick = () => reopen(h); box.appendChild(b); });
-    } catch {}
+    } catch (e) { dbg("recents load failed", e); }
   })();
 })();
