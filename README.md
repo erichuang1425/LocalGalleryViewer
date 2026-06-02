@@ -31,25 +31,33 @@ That's it. There is nothing to install and no server to start.
   per-file media cards (folders first, then files). Clicking a media card opens
   the reader at that exact item; folder cards enter when they contain subfolders.
 - **Folder grid** with lazily-generated, IndexedDB-cached cover thumbnails
-  (images and videos).
+  (images and videos), EXIF-auto-oriented so phone photos match the reader.
+- **Open by drag-and-drop** — drop a folder onto the window to open it
+  (Chrome/Edge), in addition to the picker button and recent-folder chips.
 - **Two reading modes** — vertical *scroll* (windowed for flat memory use) and
   *paged* (one item at a time) — plus an auto-advancing **slideshow** with a
-  configurable interval.
+  configurable interval and a **screen wake lock** so the display stays on.
 - **Reader extras** — fullscreen, an image-info overlay (name · dimensions ·
   size), and a one-click download of the current item.
 - **Recent folders** for one-click reopening (Chrome/Edge).
-- **Accessible** — keyboard-reachable cards, ARIA-labelled controls, focus
-  trapping in the reader and settings drawer, and a visible focus ring.
+- **Accessible** — keyboard-reachable cards with **arrow-key grid navigation**
+  (roving tabindex), ARIA-labelled controls, focus trapping in the reader and
+  settings drawer, a visible focus ring, and live-region folder announcements.
 - **Preferences** (persisted): card density, reading width, sort order
-  (name ↑ / name ↓ / shuffle), snap scrolling, and slideshow interval.
+  (name ↑ / name ↓ / date / size / shuffle), snap scrolling, slideshow interval,
+  and a default reading mode (auto / scroll / pages).
 - **Thumbnail cache** stored locally in IndexedDB so reopening a drive is
-  instant; clearable from Settings.
+  instant — bounded with LRU eviction so it never grows without limit; clearable
+  from Settings.
 
 ## Keyboard shortcuts
 
 | Key            | Action                                   |
 | -------------- | ---------------------------------------- |
 | `Esc`          | Close the reader / settings              |
+| `← ↑ → ↓`      | Move between cards in the grid           |
+| `Home / End`   | First / last card in the grid            |
+| `Enter / Space`| Open the focused card                    |
 | `Backspace`    | Go up one folder                         |
 | `← / →`        | Previous / next item (paged mode)        |
 | `Space`        | Next (paged) · scroll down (scroll mode) |
@@ -81,10 +89,10 @@ IndexedDB and can be cleared at any time from **Settings → Thumbnail cache**.
 ## Roadmap
 
 The reasoned improvement plan lives in **[IMPROVEMENTS.md](./IMPROVEMENTS.md)**.
-The original sections — mixed-content navigation, robustness, accessibility,
-viewer features, and the Firefox/Safari fallback — are **shipped**. The next
-round tracked there covers **robustness & correctness** (bounded thumbnail
-cache, EXIF-correct thumbnails, sort by date/size), **navigation & input**
+Both rounds are now **shipped**: mixed-content navigation, robustness,
+accessibility, viewer features, and the Firefox/Safari fallback, plus the
+second round's **robustness & correctness** (bounded thumbnail cache,
+EXIF-correct thumbnails, sort by date/size), **navigation & input**
 (drag-and-drop a folder, keyboard grid navigation), and **quality-of-life
 polish** (wake lock during slideshow, persisted reading mode, live-region
 announcements). **Zoom / pan on paged images** and a **shortcut-help overlay**

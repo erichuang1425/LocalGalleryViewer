@@ -7,8 +7,10 @@ first.** It is a map for implementers — every item cites the exact
 
 > **History:** the original roadmap (mixed-content navigation, robustness,
 > accessibility, viewer features 4.1–4.4, and the Firefox/Safari fallback) is
-> **shipped**. This is the *next* round, focused on robustness/correctness,
-> navigation/input, and quality-of-life polish.
+> **shipped**. The round below — robustness/correctness (A1–A3), navigation/input
+> (B1–B2), and quality-of-life polish (C1–C3) — is now **also shipped**. The only
+> remaining items are the two **deferred** ones (zoom/pan, shortcut-help overlay).
+> This document is preserved as the implementation record for the shipped work.
 
 ## The central design fact
 

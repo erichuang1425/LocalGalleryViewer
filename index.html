@@ -12,6 +12,7 @@
 <body>
 
 <div id="prog"></div>
+<div id="srStatus" class="sr-only" role="status" aria-live="polite"></div>
 
 <header id="bar" style="display:none">
   <div class="brand">▚ <b>GALLERY</b></div>
@@ -67,7 +68,9 @@
   <div class="sect"><h4>Reading width · scroll</h4>
     <div class="seg" id="segWidth"><button data-v="narrow">narrow</button><button data-v="medium">medium</button><button data-v="full">full</button></div></div>
   <div class="sect"><h4>Order</h4>
-    <div class="seg" id="segSort"><button data-v="name">name ↑</button><button data-v="nameDesc">name ↓</button><button data-v="shuffle">shuffle</button></div></div>
+    <div class="seg" id="segSort"><button data-v="name">name ↑</button><button data-v="nameDesc">name ↓</button><button data-v="date">date</button><button data-v="size">size</button><button data-v="shuffle">shuffle</button></div></div>
+  <div class="sect"><h4>Default reading mode</h4>
+    <div class="seg" id="segReaderMode"><button data-v="auto">auto</button><button data-v="scroll">scroll</button><button data-v="paged">pages</button></div></div>
   <div class="sect"><h4>Snap scrolling</h4>
     <div class="seg" id="segSnap"><button data-v="on">on</button><button data-v="off">off</button></div></div>
   <div class="sect"><h4>Slideshow interval</h4>

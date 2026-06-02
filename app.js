@@ -8,6 +8,7 @@
   const VID = ["mp4","webm","mov","m4v","mkv","ogv","ogg"];
   const COVER_DEPTH = 4, DIR_SCAN_CAP = 12, THUMB = 480, READ_MAX = 4;
   const IMG_THUMB_TIMEOUT = 8000;
+  const THUMB_CACHE_MAX = 80 * 1048576;   // ~80 MB byte budget for the thumb store
 
   const $ = s => document.querySelector(s);
   const ext = n => (n.split(".").pop() || "").toLowerCase();
@@ -35,7 +36,7 @@
   try { stored = JSON.parse(localStorage.getItem("gallery.prefs") || "{}") || {}; }
   catch (e) { dbg("prefs parse failed", e); stored = {}; }
   const prefs = Object.assign(
-    { density:"cozy", scrollWidth:"medium", sort:"name", snap:true, slideMs:3500 },
+    { density:"cozy", scrollWidth:"medium", sort:"name", snap:true, slideMs:3500, readerMode:"auto" },
     stored
   );
   const savePrefs = () => { try { localStorage.setItem("gallery.prefs", JSON.stringify(prefs)); } catch (e) { dbg("prefs save failed", e); } };
@@ -49,11 +50,13 @@
     markSeg("segSort",    prefs.sort);
     markSeg("segSnap",    prefs.snap ? "on" : "off");
     markSeg("segSlide",   String(prefs.slideMs));
+    markSeg("segReaderMode", prefs.readerMode);
   }
   function markSeg(id, val) {
     const el = document.getElementById(id); if (!el) return;
     el.querySelectorAll("button").forEach(b => b.classList.toggle("act", b.dataset.v === String(val)));
   }
+  const byMeta = prefs => prefs.sort === "date" || prefs.sort === "size";
   function sorted(arr) {
     const a = arr.slice();
     if (prefs.sort === "shuffle") { for (let i=a.length-1;i>0;i--){ const j=Math.random()*(i+1)|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
@@ -61,6 +64,23 @@
     if (prefs.sort === "nameDesc") a.reverse();
     return a;
   }
+  // date/size ordering needs async file metadata (lastModified, size) — cheap
+  // metadata reads, throttled through the read queue and cached on the node.
+  async function ensureMeta(files){
+    await Promise.all(files.map(f => f._meta ? null : schedule(async () => {
+      try { const file = await f.handle.getFile(); f._meta = { mtime:file.lastModified, size:file.size }; }
+      catch (e) { dbg("meta read failed", f.name, e); f._meta = { mtime:0, size:0 }; }
+    })));
+  }
+  function metaCmp(a,b){
+    const ma = a._meta || { mtime:0, size:0 }, mb = b._meta || { mtime:0, size:0 };
+    if (prefs.sort === "date") return (mb.mtime - ma.mtime) || natCmp(a.name, b.name);  // newest first
+    return (mb.size - ma.size) || natCmp(a.name, b.name);                               // largest first
+  }
+  // Files honor every order; directories stay name-sorted under date/size
+  // (no single mtime/size), keeping the folders-first grid stable.
+  const sortDirs  = arr => byMeta(prefs) ? arr.slice().sort((a,b)=>natCmp(a.name,b.name)) : sorted(arr);
+  const sortFiles = arr => byMeta(prefs) ? arr.slice().sort(metaCmp) : sorted(arr);
 
   /* ---------- read queue (kind to slow / external disks) ---------- */
   let active = 0; const q = [];
@@ -79,8 +99,33 @@
   async function idbGet(store,k){ const d = await db(); return new Promise((res,rej)=>{ const rq=d.transaction(store).objectStore(store).get(k); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); }
   async function idbPut(store,k,v){ const d = await db(); return new Promise((res,rej)=>{ const t=d.transaction(store,"readwrite"); t.objectStore(store).put(v,k); t.oncomplete=res; t.onerror=()=>rej(t.error); }); }
   async function cacheStats(){ const d = await db(); return new Promise(res=>{ let n=0,bytes=0; const cur=d.transaction("thumbs").objectStore("thumbs").openCursor();
-    cur.onsuccess=e=>{ const c=e.target.result; if(c){ n++; if(c.value&&c.value.size) bytes+=c.value.size; c.continue(); } else res({n,bytes}); }; cur.onerror=()=>res({n,bytes}); }); }
+    cur.onsuccess=e=>{ const c=e.target.result; if(c){ n++; if(c.value&&c.value.bytes) bytes+=c.value.bytes; c.continue(); } else res({n,bytes}); }; cur.onerror=()=>res({n,bytes}); }); }
   async function clearCache(){ const d = await db(); return new Promise(res=>{ const t=d.transaction("thumbs","readwrite"); t.objectStore("thumbs").clear(); t.oncomplete=res; t.onerror=res; }); }
+  // Bump records' access times so LRU eviction keeps recently-seen thumbs.
+  // Debounced/coalesced — a fast scroll yields one flush, not a write per card.
+  const _touchKeys = new Set(); let _touchTimer = null;
+  function touchThumb(key){ _touchKeys.add(key); if (_touchTimer) return;
+    _touchTimer = setTimeout(async () => { _touchTimer = null; const keys = [..._touchKeys]; _touchKeys.clear();
+      const now = Date.now();
+      for (const k of keys){ try { const rec = await idbGet("thumbs", k); if (rec && rec.blob){ rec.atime = now; await idbPut("thumbs", k, rec); } } catch {} }
+    }, 2000); }
+  // Opportunistic LRU eviction: when the store is over budget, drop oldest-atime
+  // records until back under. Runs serialized via _evicting to avoid pile-ups.
+  let _evicting = null;
+  function evict(){ if (_evicting) return _evicting; _evicting = (async () => {
+    try {
+      const recs = await new Promise((res,rej)=>{ db().then(d=>{ const out=[]; let total=0;
+        const cur=d.transaction("thumbs").objectStore("thumbs").openCursor();
+        cur.onsuccess=e=>{ const c=e.target.result; if(c){ const b=(c.value&&c.value.bytes)||0; total+=b; out.push({ key:c.key, bytes:b, atime:(c.value&&c.value.atime)||0 }); c.continue(); } else res({out,total}); }; cur.onerror=()=>rej(cur.error); }, rej); });
+      if (recs.total <= THUMB_CACHE_MAX) return;
+      recs.out.sort((a,b)=>a.atime-b.atime);
+      const d = await db();
+      let total = recs.total;
+      await new Promise((res)=>{ const t=d.transaction("thumbs","readwrite"), s=t.objectStore("thumbs");
+        for (const r of recs.out){ if (total <= THUMB_CACHE_MAX) break; s.delete(r.key); total -= r.bytes; }
+        t.oncomplete=res; t.onerror=res; });
+    } catch (e) { dbg("evict failed", e); } finally { _evicting = null; }
+  })(); return _evicting; }
 
   /* ---------- filesystem ---------- */
   async function listing(h){
@@ -125,8 +170,8 @@
   async function imgThumb(file){
     try{
       let bmp;
-      try { bmp = await createImageBitmap(file, { resizeWidth:THUMB, resizeQuality:"medium" }); }
-      catch { bmp = await createImageBitmap(file); }
+      try { bmp = await createImageBitmap(file, { resizeWidth:THUMB, resizeQuality:"medium", imageOrientation:"from-image" }); }
+      catch { bmp = await createImageBitmap(file, { imageOrientation:"from-image" }); }
       const w = Math.min(THUMB, bmp.width), h = Math.max(1, Math.round(bmp.height*(w/bmp.width)));
       const c = ("OffscreenCanvas" in window) ? new OffscreenCanvas(w,h)
               : Object.assign(document.createElement("canvas"), { width:w, height:h });
@@ -155,10 +200,12 @@
     const file = await fh.getFile();                         // metadata read — cheap
     if (ext(file.name) === "svg"){ const u = URL.createObjectURL(file); coverUrls.add(u); return u; }
     const key = pathPrefix + "|" + file.name + "|" + file.size + "|" + file.lastModified;
-    let blob = await idbGet("thumbs", key).catch(()=>null);
-    if (!blob){
+    const rec = await idbGet("thumbs", key).catch(()=>null);
+    let blob = rec && rec.blob;
+    if (blob){ touchThumb(key); }
+    else {
       blob = isVid(file.name) ? await videoThumb(file) : await withTimeout(imgThumb(file), IMG_THUMB_TIMEOUT);
-      if (blob) idbPut("thumbs", key, blob).catch(e => dbg("thumb cache put failed", e));
+      if (blob){ idbPut("thumbs", key, { blob, bytes:blob.size, atime:Date.now() }).then(evict).catch(e => dbg("thumb cache put failed", e)); }
     }
     if (!blob) return null;
     const u = URL.createObjectURL(blob); coverUrls.add(u); return u;
@@ -226,6 +273,20 @@
     fileInput.click();
   }
 
+  /* ---------- drag-and-drop a folder to open (Chrome/Edge) ---------- */
+  function setupDnD(el){
+    el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("dragover"); });
+    el.addEventListener("dragleave", e => { if (!el.contains(e.relatedTarget)) el.classList.remove("dragover"); });
+    el.addEventListener("drop", async e => {
+      e.preventDefault(); el.classList.remove("dragover");
+      const item = e.dataTransfer && e.dataTransfer.items && e.dataTransfer.items[0];
+      if (!item || !item.getAsFileSystemHandle){ if (FALLBACK) toast("Drag-drop needs Chrome / Edge — use the folder button"); return; }
+      let handle; try { handle = await item.getAsFileSystemHandle(); } catch (err) { dbg("getAsFileSystemHandle failed", err); return; }
+      if (!handle || handle.kind !== "directory"){ toast("Drop a folder, not a file"); return; }
+      root = handle; await addRecent(handle); launch();   // reuses the pick path — zero downstream change
+    });
+  }
+
   /* ---------- navigation ---------- */
   async function pick(){
     if (FALLBACK){ pickFallback(); return; }
@@ -261,9 +322,11 @@
     const cur = stack[stack.length-1], m = $("#main"); m.innerHTML = "";
     busy(true);
     let data; try { data = await listing(cur.handle); } catch (e) { dbg("listing failed", e); busy(false); m.innerHTML = '<div class="empty">— cannot read folder —</div>'; return; }
+    if (gen !== NAV_GEN){ busy(false); return; }
+    if (byMeta(prefs) && data.files.length){ try { await ensureMeta(data.files); } catch (e) { dbg("meta pass failed", e); } }
     busy(false);
     if (gen !== NAV_GEN) return;
-    const dirs = sorted(data.dirs), files = sorted(data.files);
+    const dirs = sortDirs(data.dirs), files = sortFiles(data.files);
 
     if (!dirs.length && !files.length){ m.innerHTML = '<div class="empty">— empty folder —</div>'; return; }
 
@@ -306,11 +369,14 @@
       }
 
       card.setAttribute("role", "button");
-      card.setAttribute("tabindex", "0");
+      card.setAttribute("tabindex", "-1");   // roving tabindex — initRoving promotes one card to 0
       card.addEventListener("keydown", e => { if (e.target === card && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); card.querySelector(".cover").click(); } });
       grid.appendChild(card); coverObs.observe(card);
     });
     m.appendChild(grid);
+    initRoving(grid);
+    const sr = $("#srStatus");
+    if (sr) sr.textContent = `${cur.name} — ${dirs.length} folder${dirs.length!==1?"s":""}, ${files.length} file${files.length!==1?"s":""}`;
   }
 
   function fillCard(card, gen){
@@ -365,6 +431,36 @@
   function filterCards(term){
     term = term.trim().toLowerCase();
     document.querySelectorAll(".card").forEach(c => c.classList.toggle("hide", term && !c._name.includes(term)));
+    const grid = document.querySelector(".grid"); if (grid) ensureRoving(grid);
+  }
+
+  /* ---------- roving-tabindex grid keyboard navigation ---------- */
+  const visibleCards = grid => [...grid.querySelectorAll(".card")].filter(c => !c.classList.contains("hide"));
+  const colCount = grid => Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length);
+  function setRoving(grid, target){ grid.querySelectorAll(".card").forEach(c => c.setAttribute("tabindex", c === target ? "0" : "-1")); }
+  // Keep exactly one *visible* card focusable (the live filter may hide the current one).
+  function ensureRoving(grid){
+    const vis = visibleCards(grid); if (!vis.length){ grid.querySelectorAll(".card").forEach(c => c.setAttribute("tabindex","-1")); return; }
+    if (!vis.some(c => c.getAttribute("tabindex") === "0")) setRoving(grid, vis[0]);
+  }
+  function initRoving(grid){
+    ensureRoving(grid);
+    grid.addEventListener("focusin", e => { const card = e.target.closest(".card"); if (card && !card.classList.contains("hide")) setRoving(grid, card); });
+    grid.addEventListener("keydown", e => {
+      const card = e.target.closest(".card"); if (!card) return;
+      if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"].includes(e.key)) return;
+      const cards = visibleCards(grid), idx = cards.indexOf(card); if (idx < 0) return;
+      const cols = colCount(grid); let n = idx;
+      if (e.key === "ArrowRight") n = Math.min(cards.length-1, idx+1);
+      else if (e.key === "ArrowLeft") n = Math.max(0, idx-1);
+      else if (e.key === "ArrowDown") n = Math.min(cards.length-1, idx+cols);
+      else if (e.key === "ArrowUp") n = Math.max(0, idx-cols);
+      else if (e.key === "Home") n = 0;
+      else if (e.key === "End") n = cards.length-1;
+      e.preventDefault();
+      if (n === idx) return;
+      setRoving(grid, cards[n]); cards[n].focus();
+    });
   }
 
   /* ---------- reader ---------- */
@@ -382,7 +478,9 @@
     readerFocus = document.activeElement;
     const r = $("#reader"); r.classList.add("on","open-anim"); setTimeout(()=>r.classList.remove("open-anim"), 400);
     document.body.style.overflow = "hidden";
-    setMode(mode || "scroll");
+    // prefs.readerMode "auto" keeps the contextual mode; scroll/paged override it.
+    const resolved = prefs.readerMode === "auto" ? (mode || "scroll") : prefs.readerMode;
+    setMode(resolved);
     $("#rclose").focus();
   }
   function closeReader(){
@@ -493,8 +591,11 @@
   });
 
   /* slideshow */
-  function startSlide(){ if (R.mode!=="paged") setMode("paged"); clearInterval(slideTimer); slideTimer = setInterval(next, +prefs.slideMs || 3500); const s=$("#slide"); s.textContent = "⏸"; s.setAttribute("aria-pressed","true"); }
-  function stopSlide(){ if (!slideTimer) return; clearInterval(slideTimer); slideTimer = null; const s=$("#slide"); if (s){ s.textContent = "▶"; s.setAttribute("aria-pressed","false"); } }
+  let wakeLock = null;
+  function acquireWake(){ if (!("wakeLock" in navigator)) return; navigator.wakeLock.request("screen").then(s => { wakeLock = s; }).catch(e => dbg("wakeLock request failed", e)); }
+  function releaseWake(){ if (wakeLock){ try { wakeLock.release(); } catch {} wakeLock = null; } }
+  function startSlide(){ if (R.mode!=="paged") setMode("paged"); clearInterval(slideTimer); slideTimer = setInterval(next, +prefs.slideMs || 3500); acquireWake(); const s=$("#slide"); s.textContent = "⏸"; s.setAttribute("aria-pressed","true"); }
+  function stopSlide(){ if (!slideTimer) return; clearInterval(slideTimer); slideTimer = null; releaseWake(); const s=$("#slide"); if (s){ s.textContent = "▶"; s.setAttribute("aria-pressed","false"); } }
   function toggleSlide(){ slideTimer ? stopSlide() : startSlide(); }
 
   /* floating arrows by proximity + auto-hiding bar (paged) */
@@ -561,6 +662,7 @@
   bindSeg("segSnap", "snap");
   bindSeg("segSlide", "slideMs", () => { if (slideTimer) startSlide(); });
   bindSeg("segSort", "sort", () => { if (stack.length) render(); });
+  bindSeg("segReaderMode", "readerMode");
 
   $("#paged").addEventListener("mousemove", e => {
     const w = innerWidth, x = e.clientX;
@@ -605,6 +707,8 @@
   /* ---------- startup ---------- */
   (async () => {
     applyPrefs();
+    setupDnD($("#intro")); setupDnD($("#main"));
+    if (!FALLBACK) evict();   // trim any over-budget thumb cache left from a prior session
     if (FALLBACK){
       // No durable handle model → no recents / re-grant. Use the input-folder fallback.
       $("#recents").style.display = "none";
