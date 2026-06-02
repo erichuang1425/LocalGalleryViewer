@@ -15,10 +15,10 @@
 
 <header id="bar" style="display:none">
   <div class="brand">▚ <b>GALLERY</b></div>
-  <nav class="crumbs" id="crumbs"></nav>
-  <input id="filter" class="filter" placeholder="filter…" autocomplete="off" spellcheck="false">
-  <button class="btn ghost icon" id="settingsBtn" title="Settings">⚙</button>
-  <button class="btn ghost" id="rootBtn" title="Open a different root folder">⤓ folder</button>
+  <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
+  <input id="filter" class="filter" placeholder="filter…" autocomplete="off" spellcheck="false" aria-label="Filter cards">
+  <button class="btn ghost icon" id="settingsBtn" title="Settings" aria-label="Open settings">⚙</button>
+  <button class="btn ghost" id="rootBtn" title="Open a different root folder" aria-label="Open a different root folder">⤓ folder</button>
 </header>
 
 <section id="intro">
@@ -29,35 +29,39 @@
     <button class="btn solid" id="pick">⤓ &nbsp;Choose a folder</button>
   </div>
   <div class="recents" id="recents"></div>
-  <div class="note">Runs <b>on your machine</b> — nothing uploaded. Needs <b>Chrome / Edge</b>. Covers are cached, so reopening a drive is instant. Keep these three files in the same folder.</div>
+  <div class="note" id="introNote">Runs <b>on your machine</b> — nothing uploaded. Best in <b>Chrome / Edge</b>. Covers are cached, so reopening a drive is instant. Keep these three files in the same folder.</div>
 </section>
 
 <main id="main" style="display:none"></main>
 
-<div id="reader">
+<div id="reader" role="dialog" aria-modal="true" aria-labelledby="rtitle">
   <div class="rbar">
     <span class="rtitle" id="rtitle"></span>
     <span class="rcount" id="rcount"></span>
     <div class="spacer" style="flex:1"></div>
-    <div class="seg">
-      <button id="mScroll" class="act">↕ scroll</button>
-      <button id="mPage">⇄ pages</button>
+    <div class="seg" id="segMode" role="group" aria-label="Reading mode">
+      <button id="mScroll" class="act" aria-pressed="true">↕ scroll</button>
+      <button id="mPage" aria-pressed="false">⇄ pages</button>
     </div>
-    <button class="rclose" id="slide" title="Slideshow (s)">▶</button>
-    <button class="rclose" id="rclose" title="Close (Esc)">✕</button>
+    <button class="rclose" id="infoBtn" title="Image info (i)" aria-label="Toggle image info" aria-pressed="false">ⓘ</button>
+    <button class="rclose" id="dlBtn" title="Download current item" aria-label="Download current item">⤓</button>
+    <button class="rclose" id="fsBtn" title="Fullscreen (f)" aria-label="Toggle fullscreen" aria-pressed="false">⛶</button>
+    <button class="rclose" id="slide" title="Slideshow (s)" aria-label="Toggle slideshow" aria-pressed="false">▶</button>
+    <button class="rclose" id="rclose" title="Close (Esc)" aria-label="Close reader">✕</button>
   </div>
   <div class="scroll" id="scroll"></div>
   <div class="paged" id="paged">
     <div class="zone l" id="zL"></div>
     <div class="zone r" id="zR"></div>
-    <button class="nav l" id="navL">‹</button>
+    <button class="nav l" id="navL" aria-label="Previous item">‹</button>
     <div class="stage" id="stage"></div>
-    <button class="nav r" id="navR">›</button>
+    <button class="nav r" id="navR" aria-label="Next item">›</button>
+    <div class="rinfo" id="rinfo"></div>
   </div>
 </div>
 
-<aside id="settings" class="drawer">
-  <div class="dhead"><span>⚙ Settings</span><button class="rclose" id="sClose">✕</button></div>
+<aside id="settings" class="drawer" aria-label="Settings">
+  <div class="dhead"><span>⚙ Settings</span><button class="rclose" id="sClose" aria-label="Close settings">✕</button></div>
   <div class="sect"><h4>Card size</h4>
     <div class="seg" id="segDensity"><button data-v="compact">compact</button><button data-v="cozy">cozy</button><button data-v="large">large</button></div></div>
   <div class="sect"><h4>Reading width · scroll</h4>
@@ -66,6 +70,8 @@
     <div class="seg" id="segSort"><button data-v="name">name ↑</button><button data-v="nameDesc">name ↓</button><button data-v="shuffle">shuffle</button></div></div>
   <div class="sect"><h4>Snap scrolling</h4>
     <div class="seg" id="segSnap"><button data-v="on">on</button><button data-v="off">off</button></div></div>
+  <div class="sect"><h4>Slideshow interval</h4>
+    <div class="seg" id="segSlide"><button data-v="2000">2s</button><button data-v="3500">3.5s</button><button data-v="6000">6s</button></div></div>
   <div class="sect"><h4>Thumbnail cache</h4>
     <div class="cacheline" id="cacheStat">—</div>
     <button class="btn" id="clearCache">Clear cache</button></div>

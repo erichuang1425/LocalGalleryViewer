@@ -8,9 +8,11 @@ No server. No build step. No dependencies. Just three files.
 
 ## Requirements
 
-- **Chrome or Edge** — the app uses the [File System Access API][fsa]
-  (`showDirectoryPicker`), which Firefox and Safari do not yet support. A
-  fallback for those browsers is planned (see [Roadmap](#roadmap)).
+- **Chrome or Edge recommended** — the app uses the [File System Access API][fsa]
+  (`showDirectoryPicker`) for lazy reads and one-click **recent folders**.
+- **Firefox and Safari** are supported through a `<input webkitdirectory>`
+  fallback. The picked folder is read up front (higher memory) and recent
+  folders are unavailable, but browsing, reading, and thumbnails all work.
 
 [fsa]: https://developer.mozilla.org/docs/Web/API/File_System_API
 
@@ -25,13 +27,21 @@ That's it. There is nothing to install and no server to start.
 
 ## Features
 
+- **Mixed-content grid** — a folder shows **both** subfolder cards **and**
+  per-file media cards (folders first, then files). Clicking a media card opens
+  the reader at that exact item; folder cards enter when they contain subfolders.
 - **Folder grid** with lazily-generated, IndexedDB-cached cover thumbnails
   (images and videos).
 - **Two reading modes** — vertical *scroll* (windowed for flat memory use) and
-  *paged* (one item at a time) — plus an auto-advancing **slideshow**.
+  *paged* (one item at a time) — plus an auto-advancing **slideshow** with a
+  configurable interval.
+- **Reader extras** — fullscreen, an image-info overlay (name · dimensions ·
+  size), and a one-click download of the current item.
 - **Recent folders** for one-click reopening (Chrome/Edge).
+- **Accessible** — keyboard-reachable cards, ARIA-labelled controls, focus
+  trapping in the reader and settings drawer, and a visible focus ring.
 - **Preferences** (persisted): card density, reading width, sort order
-  (name ↑ / name ↓ / shuffle), and snap scrolling.
+  (name ↑ / name ↓ / shuffle), snap scrolling, and slideshow interval.
 - **Thumbnail cache** stored locally in IndexedDB so reopening a drive is
   instant; clearable from Settings.
 
@@ -46,9 +56,8 @@ That's it. There is nothing to install and no server to start.
 | `Home / End`   | First / last item                        |
 | `m`            | Toggle scroll / paged mode               |
 | `s`            | Toggle slideshow                         |
-
-Planned additions (`f` fullscreen, `i` image info) are described in the
-[Roadmap](#roadmap).
+| `f`            | Toggle fullscreen                        |
+| `i`            | Toggle image-info overlay (paged mode)   |
 
 ## Privacy
 
@@ -71,6 +80,7 @@ IndexedDB and can be cleared at any time from **Settings → Thumbnail cache**.
 
 ## Roadmap
 
-A detailed, reasoned improvement plan — covering mixed-content folder
-navigation, robustness, accessibility, new viewer features, and a
-Firefox/Safari fallback — lives in **[IMPROVEMENTS.md](./IMPROVEMENTS.md)**.
+The reasoned improvement plan lives in **[IMPROVEMENTS.md](./IMPROVEMENTS.md)**.
+Sections 1–5 (mixed-content navigation, robustness, accessibility, viewer
+features 4.1–4.4, and the Firefox/Safari fallback) are now implemented. The only
+remaining deferred item is **zoom / pan on paged images (4.5)**.
