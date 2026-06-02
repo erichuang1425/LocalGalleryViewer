@@ -81,6 +81,11 @@ IndexedDB and can be cleared at any time from **Settings → Thumbnail cache**.
 ## Roadmap
 
 The reasoned improvement plan lives in **[IMPROVEMENTS.md](./IMPROVEMENTS.md)**.
-Sections 1–5 (mixed-content navigation, robustness, accessibility, viewer
-features 4.1–4.4, and the Firefox/Safari fallback) are now implemented. The only
-remaining deferred item is **zoom / pan on paged images (4.5)**.
+The original sections — mixed-content navigation, robustness, accessibility,
+viewer features, and the Firefox/Safari fallback — are **shipped**. The next
+round tracked there covers **robustness & correctness** (bounded thumbnail
+cache, EXIF-correct thumbnails, sort by date/size), **navigation & input**
+(drag-and-drop a folder, keyboard grid navigation), and **quality-of-life
+polish** (wake lock during slideshow, persisted reading mode, live-region
+announcements). **Zoom / pan on paged images** and a **shortcut-help overlay**
+remain deferred.
