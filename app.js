@@ -392,6 +392,8 @@
     document.body.style.overflow = "";
     $("#scroll").innerHTML = ""; $("#stage").innerHTML = "";
     if (pageObs) pageObs.disconnect(); clearTimeout(barTimer); freeURLs();
+    infoOn = false; $("#rinfo").classList.remove("on");
+    $("#infoBtn").classList.remove("act"); $("#infoBtn").setAttribute("aria-pressed", "false");
     if (readerFocus && readerFocus.focus){ try { readerFocus.focus(); } catch {} }
     readerFocus = null;
   }
