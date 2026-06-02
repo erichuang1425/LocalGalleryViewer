@@ -24,6 +24,14 @@ input{font:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .filter:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 
+/* visually-hidden live region (screen-reader announcements) */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* drag-and-drop a folder to open */
+#intro.dragover,main.dragover{position:relative;outline:2px dashed var(--accent);outline-offset:-14px}
+#intro.dragover::after,main.dragover::after{content:"Drop a folder to open";position:absolute;left:50%;top:24px;transform:translateX(-50%);z-index:60;pointer-events:none;
+  font-family:var(--mono);font-size:12.5px;font-weight:600;color:#1a1208;background:var(--accent);padding:8px 14px;border-radius:8px;box-shadow:0 6px 18px -8px rgba(232,146,58,.7)}
+
 /* progress (slow disks) */
 #prog{position:fixed;left:0;top:0;height:2px;width:100%;z-index:130;overflow:hidden;opacity:0;transition:opacity .2s;pointer-events:none}
 #prog.go{opacity:1}
