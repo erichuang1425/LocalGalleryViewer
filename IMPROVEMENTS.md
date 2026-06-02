@@ -95,11 +95,25 @@ interaction is the subtle part).
 
 - **(a) Thumbnail cache-key collision.** `app.js:129` keys on
   `name|size|lastModified`, so two identically-sized files named `cover.jpg` in
-  different folders collide. Thread the folder path:
-  `thumbURL(fh, keyPrefix)` where `keyPrefix = stack.map(n => n.name).join("/")`,
-  and key on `keyPrefix + "|" + name + "|" + size + "|" + lastModified`. Folds
-  naturally into §1 (file cards already know the path). Invalidates the existing
-  cache — acceptable; it's regenerable and `clearCache` exists (`app.js:71`).
+  different folders collide. The key must incorporate the cover's **actual full
+  path**, not just the current navigation folder — using
+  `stack.map(n => n.name).join("/")` alone is insufficient, because it is
+  identical for every sibling card while rendering one parent, so two siblings
+  `A/cover.jpg` and `B/cover.jpg` (same size/mtime) would still collide under the
+  shared parent prefix. Thread `thumbURL(fh, pathPrefix)` and key on
+  `pathPrefix + "|" + name + "|" + size + "|" + lastModified`, where `pathPrefix`
+  is the full path to the cover file:
+  - **File cards** (§1, media in the current folder): `pathPrefix` is the current
+    `stack` path + the file's own name — known directly at the call site.
+  - **Folder-card covers** (via `findCover` `app.js:85-93`, which recurses into
+    child subdirs): `findCover` must also return the **relative descent path** it
+    took (e.g. `childDir/sub`), so the caller can build
+    `stack-path / folder-card-name / descent / fileName`. Change `findCover` to
+    return `{ file, relPath }` (accumulating each `dirs[i].name` as it recurses
+    at `app.js:90`) instead of just the file.
+
+  Invalidates the existing cache — acceptable; it's regenerable and `clearCache`
+  exists (`app.js:71`).
 - **(b) Guard preference parsing.** `JSON.parse(localStorage…)` at `app.js:28`
   throws on corrupt data and breaks the whole IIFE before anything renders. Wrap
   in try/catch → `{}`. Also defend `savePrefs` (`app.js:30`) against quota /
