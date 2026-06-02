@@ -515,10 +515,11 @@
 
   /* ---------- settings drawer ---------- */
   async function openSettings(){
-    settingsFocus = document.activeElement;
+    const wasOpen = $("#settings").classList.contains("on");
+    if (!wasOpen){ settingsFocus = document.activeElement; }   // don't clobber the restore target on re-open (e.g. after Clear cache)
     $("#settings").classList.add("on"); $("#backdrop").classList.add("on");
     $("#cacheStat").textContent = "calculating…";
-    $("#sClose").focus();
+    if (!wasOpen) $("#sClose").focus();
     try { const { n, bytes } = await cacheStats(); $("#cacheStat").textContent = `${n} thumbnail${n!==1?"s":""} · ${fmtBytes(bytes)}`; }
     catch { $("#cacheStat").textContent = "—"; }
   }
