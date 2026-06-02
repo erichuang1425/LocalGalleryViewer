@@ -150,13 +150,17 @@
   }
   // Returns { file, relPath } where relPath is the descent path (subfolder names)
   // taken from h down to the cover file — "" when the cover sits directly in h.
-  async function findCover(h, depth=0, rel=""){
+  // `token` lets a caller abort a deep/slow scan (checked between dir reads) so
+  // the recursive I/O actually stops instead of running on after a timeout.
+  async function findCover(h, depth=0, rel="", token){
+    if (token && token.cancelled) return null;
     const { dirs, files } = await listing(h);
     const hit = files.find(f=>isImg(f.name)) || files.find(f=>isVid(f.name));
     if (hit) return { file: hit, relPath: rel };
     if (depth < COVER_DEPTH){
       for (const d of dirs.slice(0,DIR_SCAN_CAP)){
-        const c = await findCover(d.handle, depth+1, rel ? rel + "/" + d.name : d.name);
+        if (token && token.cancelled) return null;
+        const c = await findCover(d.handle, depth+1, rel ? rel + "/" + d.name : d.name, token);
         if (c) return c;
       }
     }
@@ -417,7 +421,12 @@
     card.querySelector(".open-hint").textContent = dirs.length ? "enter ▸" : (files.length ? "view ▸" : "open ▸");
 
     const cover = card.querySelector(".cover");
-    let cov = null; try { cov = await withTimeout(findCover(d.handle), COVER_FIND_TIMEOUT); } catch (e) { dbg("findCover failed", e); }
+    // Hold the read-queue slot until the scan truly stops: on timeout we cancel
+    // the token so findCover bails at the next dir boundary (no orphaned I/O
+    // running past READ_MAX), rather than racing and leaving it churning.
+    const token = { cancelled:false };
+    const coverTimer = setTimeout(() => { token.cancelled = true; }, COVER_FIND_TIMEOUT);
+    let cov = null; try { cov = await findCover(d.handle, 0, "", token); } catch (e) { dbg("findCover failed", e); } finally { clearTimeout(coverTimer); }
     if (gen !== NAV_GEN){ busy(false); cover.classList.remove("shim"); return; }
     if (cov){
       const prefix = [card._path, d.name, cov.relPath].filter(Boolean).join("/");
