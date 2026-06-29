@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Local Gallery Viewer preview</title>
+  <desc id="desc">A representative browser gallery interface with folder cards, thumbnails, and a reader panel.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f6f3ed"/>
+      <stop offset="0.55" stop-color="#eef5f1"/>
+      <stop offset="1" stop-color="#edf1fa"/>
+    </linearGradient>
+    <linearGradient id="coverA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6fed"/>
+      <stop offset="1" stop-color="#18a07a"/>
+    </linearGradient>
+    <linearGradient id="coverB" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb24a"/>
+      <stop offset="1" stop-color="#da5c5c"/>
+    </linearGradient>
+    <linearGradient id="coverC" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#20242f"/>
+      <stop offset="1" stop-color="#67718a"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#2b3038" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <rect x="80" y="70" width="1120" height="580" rx="28" fill="#ffffff" filter="url(#shadow)"/>
+  <rect x="80" y="70" width="1120" height="76" rx="28" fill="#171b22"/>
+  <rect x="80" y="118" width="1120" height="28" fill="#171b22"/>
+  <circle cx="119" cy="108" r="8" fill="#ff6868"/>
+  <circle cx="145" cy="108" r="8" fill="#ffc14f"/>
+  <circle cx="171" cy="108" r="8" fill="#54c77d"/>
+  <text x="216" y="116" fill="#f6f8fb" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Local Gallery Viewer</text>
+  <rect x="882" y="91" width="122" height="34" rx="17" fill="#2f6fed"/>
+  <text x="907" y="114" fill="#ffffff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">Choose folder</text>
+  <rect x="1018" y="91" width="124" height="34" rx="17" fill="#2b3038"/>
+  <text x="1048" y="114" fill="#d8dde8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">Settings</text>
+  <text x="122" y="190" fill="#252a34" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="800">Photo Archive</text>
+  <text x="122" y="220" fill="#687083" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15">Folders first, then media. Everything stays on this device.</text>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <g transform="translate(122 260)">
+      <rect width="194" height="148" rx="14" fill="#f5f7fb" stroke="#e2e6ef"/>
+      <rect x="14" y="14" width="166" height="92" rx="10" fill="url(#coverA)"/>
+      <circle cx="58" cy="52" r="21" fill="#ffffff" opacity="0.78"/>
+      <path d="M92 90l29-34 21 24 14-16 24 26z" fill="#ffffff" opacity="0.76"/>
+      <text x="14" y="130" fill="#252a34" font-size="15" font-weight="800">Family</text>
+    </g>
+    <g transform="translate(340 260)">
+      <rect width="194" height="148" rx="14" fill="#f5f7fb" stroke="#e2e6ef"/>
+      <rect x="14" y="14" width="166" height="92" rx="10" fill="url(#coverB)"/>
+      <circle cx="135" cy="50" r="22" fill="#fff3d8" opacity="0.9"/>
+      <path d="M14 106h166V77c-22-6-42-4-60 7-25 15-48 12-70 1-15-8-27-9-36-4z" fill="#fff6e8" opacity="0.72"/>
+      <text x="14" y="130" fill="#252a34" font-size="15" font-weight="800">Travel</text>
+    </g>
+    <g transform="translate(558 260)">
+      <rect width="194" height="148" rx="14" fill="#f5f7fb" stroke="#e2e6ef"/>
+      <rect x="14" y="14" width="166" height="92" rx="10" fill="url(#coverC)"/>
+      <polygon points="83,42 83,80 118,61" fill="#ffffff" opacity="0.9"/>
+      <text x="14" y="130" fill="#252a34" font-size="15" font-weight="800">Clips</text>
+    </g>
+    <g transform="translate(776 260)">
+      <rect width="302" height="248" rx="16" fill="#171b22"/>
+      <rect x="18" y="18" width="266" height="162" rx="12" fill="#eef2f7"/>
+      <path d="M18 180h266v-56c-34-12-64-7-91 15-31 25-68 22-101 4-29-16-52-13-74 8z" fill="#66b393" opacity="0.7"/>
+      <circle cx="222" cy="62" r="26" fill="#f3b34d" opacity="0.9"/>
+      <text x="20" y="214" fill="#f8fafc" font-size="17" font-weight="800">Paged reader</text>
+      <text x="20" y="236" fill="#aab3c4" font-size="13">Fullscreen, slideshow, image info</text>
+    </g>
+    <g transform="translate(122 436)">
+      <rect width="630" height="72" rx="14" fill="#f7f9fc" stroke="#e2e6ef"/>
+      <rect x="22" y="22" width="96" height="28" rx="14" fill="#e8eefb"/>
+      <text x="44" y="41" fill="#2f6fed" font-size="13" font-weight="800">name up</text>
+      <rect x="132" y="22" width="94" height="28" rx="14" fill="#edf2f0"/>
+      <text x="154" y="41" fill="#178a5b" font-size="13" font-weight="800">date</text>
+      <rect x="240" y="22" width="102" height="28" rx="14" fill="#f4eee7"/>
+      <text x="262" y="41" fill="#9b5b1d" font-size="13" font-weight="800">shuffle</text>
+      <text x="382" y="41" fill="#687083" font-size="14">Local cache: ready</text>
+    </g>
+  </g>
+</svg>
